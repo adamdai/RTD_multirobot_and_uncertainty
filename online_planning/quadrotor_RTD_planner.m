@@ -1,4 +1,4 @@
-classdef quadrotor_zonotope_RTD_planner < planner
+classdef quadrotor_RTD_planner < planner
 %% properties
     properties
         PRS
@@ -9,13 +9,13 @@ classdef quadrotor_zonotope_RTD_planner < planner
 %% methods
     methods
         %% constructor
-        function P = quadrotor_zonotope_RTD_planner(varargin)
+        function P = quadrotor_RTD_planner(varargin)
             P@planner(varargin{:}) ;
         end
         
         %% replan
         function [T_des,U_des,Z_des] = replan(P,agent_info,world_info)
-            
+            error('this is incomplete!')
         end
         
         %% get initial condition

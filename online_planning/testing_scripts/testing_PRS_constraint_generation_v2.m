@@ -27,7 +27,7 @@ v_0 = [0.5;0;0] ;
 a_0 = [0;0;0] ;
 
 % v_peak list
-n_v_peak = 10000 ;
+n_v_peak = 1000 ;
 
 % number of obstacles to try
 n_obs = 100 ;
@@ -39,20 +39,25 @@ load('quadrotor_PRS_sparse_v_max_5_a_max_10.mat')
 % make a list of v_peak values
 v_peak = 5.*rand(3,n_v_peak) - 2.5 ;
 % v_peak = make_v_peak_sphere(PRS.v_max,11,v_0) ;
+
+% make a list of obstacles
+obs_centers = 10.*rand(3,n_obs) - 5 ;
+obs_side_lengths = 2.*rand(3,n_obs) ;
+
+% % custom v_peaks and obstacles for testing
 % v_peak = [1.0 1.0  0.0 1.0 -1.0 ;
 %           0.0 1.0 -1.0 0.5  0.5;
 %           0.0 0.0  1.0 0.0  1.0] ;
-n_v_peak = size(v_peak,2) ;
-
-% make a list of obstacles
+%       
 % obs_centers = [2 1 0.5;
 %                0 1 -1 ;
 %                0 0 1] ;
-obs_centers = 10.*rand(3,n_obs) - 5 ;
+% 
+n_v_peak = size(v_peak,2) ;
+% n_obs = size(obs_centers,2) ;
+%            
+% obs_side_lengths = 0.5.*ones(3,n_obs) ;
 
-% obs_side_lengths = 2.*rand(3,n_obs) ;
-obs_side_lengths = 0.5.*ones(3,n_obs) ;
-n_obs = size(obs_centers,2) ;
 
 %% slicing for initial conditions
 % subtract x_0 from the center of each obstacle
@@ -73,62 +78,107 @@ k_peak = v_peak ./ PRS.v_max ;
 
 %% obstacle check
 tic
-% get obstacle upper and lower bounds
+% get obstacle lower bounds
 %%% HERE IS WHERE WE WOULD ADD TRACKING ERROR NORMALLY %%%
-obs_half_side_lengths = 0.5.*obs_side_lengths ;
+% obs_half_side_lengths = 0.5.*obs_side_lengths ;
+obs_lb = obs_centers - 0.5.*obs_side_lengths ;
 
 % set up to save each lower and upper bound of distances reacha
 k_peak_unsafe_lbs = nan(3, n_time*n_obs) ;
 k_peak_unsafe_ubs = nan(3, n_time*n_obs) ;
 n_unsafe = 1 ;
 
+v_peak_unsafe_log = false(1,n_v_peak) ;
+
+% set up giant k_peak matrix
+k_peak_big = repmat(k_peak,n_obs,1) ;
+
 % for each FRS time step...
 for idx_time = 1:n_time
     % create new unsafe log
-    v_peak_unsafe_log = false(1,n_v_peak) ;
-    
+%     v_peak_unsafe_log = false(1,n_v_peak) ;
+   
     % get the PRS width at the current time
     k_peak_width = PRS.zonotope_widths.k_peak(idx_time) ;
     
     % make a k_peak box for the current time
-    d_peak_lb = -k_peak_width.*ones(3,1) ;
-    d_peak_ub =  k_peak_width.*ones(3,1) ;
+    d_peak_lb = -k_peak_width ;
+    d_peak_ub =  k_peak_width ;
     
-    % for each obstacle...
-    for idx_obs = 1:n_obs
-        % shift the obstacle by the corresponding k_v and k_a values
-        obs_center = obs_centers(:,idx_obs) - initial_condition_offset(:,idx_time) ;
-        
-        % store the upper and lower obstacle bounds
-        obs_lb = obs_center - obs_half_side_lengths(:,idx_obs) ;
-        obs_ub = obs_center + obs_half_side_lengths(:,idx_obs) ;
-        
-        % check if the k_peak box overlaps the obstacle box (i.e., do there
-        % exist choices of k_peak that can reach the obstacle?)
-        if all(d_peak_ub >= obs_lb & d_peak_lb <= obs_ub)
-            % intersect the two boxes
-            d_peak_lb_int = max([d_peak_lb,obs_lb],[],2) ./ k_peak_width ;
-            d_peak_ub_int = min([d_peak_ub,obs_ub],[],2) ./ k_peak_width ;
-            
-            % check each bound
-            chk = all(k_peak >= d_peak_lb_int & k_peak <= d_peak_ub_int,1) ;
-            
-            v_peak_unsafe_log = v_peak_unsafe_log | chk ;
-
-            % store the new bounds
-            k_peak_unsafe_lbs(:,n_unsafe) = d_peak_lb_int ;
-            k_peak_unsafe_ubs(:,n_unsafe) = d_peak_ub_int ;
-            
-            n_unsafe = n_unsafe + 1 ;
-        end
-    end
+    % create obstacle lb and ub shifted to current initial condition / time
+    % "local" coordinate frame of the trajectory (for any possible k_peak)
+    obs_lb_idx = obs_lb - initial_condition_offset(:,idx_time) ;
+    obs_ub_idx = obs_lb_idx + obs_side_lengths ;
     
-    % delete unsafe trajs
-    k_peak(:,v_peak_unsafe_log) = [] ;
-    n_v_peak = size(k_peak,2) ;
+    % check if there exist k_peak that overlap the obstacle boxes
+    d_peak_check = all(obs_lb_idx >= d_peak_lb,1) & all(obs_ub_idx <= d_peak_ub,1) ;
+    
+    % for all the obstacles that overlap, get the bounds on k_peak
+    if any(d_peak_check)
+        % get the unsafe obstacle bounds
+        obs_lb_idx = obs_lb_idx(:,d_peak_check) ;
+        obs_ub_idx = obs_ub_idx(:,d_peak_check) ;
+        
+        % intersect the PRS box in workspace with these obstacles
+        obs_lb_idx(obs_lb_idx <= d_peak_lb) = d_peak_lb ;
+        obs_ub_idx(obs_ub_idx >= d_peak_ub) = d_peak_ub ;
+        
+        % convert boxes to k_peak
+        k_peak_lb = obs_lb_idx ./ k_peak_width ;
+        k_peak_ub = obs_ub_idx ./ k_peak_width ;
+        
+        %%
+        n_obs_idx = size(k_peak_lb,2) ;
+        k_peak_big_idx = k_peak_big(1:(n_obs_idx*3),:) ;
+        k_peak_lb_big = repmat(k_peak_lb(:),1,n_v_peak) ;
+        k_peak_ub_big = repmat(k_peak_ub(:),1,n_v_peak) ;
+        
+        v_peak_unsafe_log_big = k_peak_lb_big <= k_peak_big_idx & ...
+                                k_peak_ub_big >= k_peak_big_idx ;
+                            
+        v_peak_unsafe_log = v_peak_unsafe_log | ...
+            any(reshape(all(reshape(v_peak_unsafe_log_big,3,[]),1),n_obs_idx,[]),1) ;
+                            
+%         if idx_time == 80
+%             disp('hi')
+%         end
+    end    
+%     % for each obstacle...
+%     for idx_obs = 1:n_obs
+%         % shift the obstacle by the corresponding k_v and k_a values
+%         obs_center = obs_centers(:,idx_obs) - initial_condition_offset(:,idx_time) ;
+%         
+%         % store the upper and lower obstacle bounds
+%         obs_lb = obs_center - obs_half_side_lengths(:,idx_obs) ;
+%         obs_ub = obs_center + obs_half_side_lengths(:,idx_obs) ;
+%         
+%         % check if the k_peak box overlaps the obstacle box (i.e., do there
+%         % exist choices of k_peak that can reach the obstacle?)
+%         if all(d_peak_ub >= obs_lb & d_peak_lb <= obs_ub)
+%             % intersect the two boxes
+%             d_peak_lb_int = max([d_peak_lb,obs_lb],[],2) ./ k_peak_width ;
+%             d_peak_ub_int = min([d_peak_ub,obs_ub],[],2) ./ k_peak_width ;
+%             
+%             % check each bound
+%             chk = all(k_peak >= d_peak_lb_int & k_peak <= d_peak_ub_int,1) ;
+%             
+%             v_peak_unsafe_log = v_peak_unsafe_log | chk ;
+% 
+%             % store the new bounds
+%             k_peak_unsafe_lbs(:,n_unsafe) = d_peak_lb_int ;
+%             k_peak_unsafe_ubs(:,n_unsafe) = d_peak_ub_int ;
+%             
+%             n_unsafe = n_unsafe + 1 ;
+%         end
+%     end
+    
+%     % delete unsafe trajs
+%     k_peak(:,v_peak_unsafe_log) = [] ;
+%     n_v_peak = size(k_peak,2) ;
 end
 toc
 
+%% use linear constraints instead of logical index (commented out for now)
 % % clean up extra columns
 % % tic
 % if n_unsafe < (n_time*n_obs)
