@@ -1,9 +1,43 @@
-function [T,Z,Z_plan] = quadrotor_planning_model(v_0,a_0,v_peak,t_plan,...
+function [T,Z,z_plan] = quadrotor_planning_model_3D(v_0,a_0,v_peak,t_plan,...
                                            t_peak,t_total,t_sample,t_extra)
-% [T,Z,Z_plan] = quadrotor_planning_model(v_0,a_0,v_peak,t_plan,t_peak,...
-%                                         t_total,t_sample,t_extra)
+% [T,Z,z_plan] = quadrotor_planning_model_3D(v_0,a_0,v_peak,t_plan,t_peak,...
+%                                            t_total,t_sample,t_extra)
 %
+% This function returns a trajectory represented as a time array T and a
+% trajectory array Z. That is, T = 0:t_sample:(t_total + t_extra) and Z \in
+% \R^{15*n_T} where n_T = length(T).
 %
+% The trajectory array format is Z = [X ; V ; A ; J ; S], where X is
+% position in \R^{3*n_T} and similarly, V is velocity, A is acceleration, J
+% is jerk, and S is snap.
+%
+% The inputs are: v_0 (initial velocity), a_0 (initial acceleration),
+% v_peak (a desired or "peak" velocity) that is reached at time t_peak,
+% t_plan (duration allowed for receding-horizon planning), t_total (total
+% duration of the trajectory, since each trajectory includes a stopping
+% maneuver from t_peak to t_total), t_sample (time discretization), and
+% t_extra (extra time that can be added on to the end of the trajectory).
+%
+% The last output, z_plan, is the point Z(t_plan); this can be used in each
+% planning iteration as an initial condition for finding a new trajectory
+% plan.
+%
+% This code uses Mark Mueller's analytical solution to quadrotor spline
+% planning; we make use of this same spline model for our quadrotor
+% trajectory planning, but we compute a reachable set of the splines.
+%
+% EXAMPLE USAGE:
+% % create a random trajectory of duration 3 s
+% [T,Z,z_plan] = quadrotor_planning_model_3D(rand(3,1),rand(3,1),rand(3,1),...
+%                                            0.5,1.5,3,0.01)
+%
+% % plot the trajectory
+% figure(1) ; clf ; axis equal ; hold on ; grid on ; view(3)
+% plot_path(Z(1:3,:),'b-') % note, this requires the simulator repo
+%
+% Authors: Patrick Holmes and Shreyas Kousik
+% Created: Feb 2019
+% Updated: 1 Nov 2020
 %
 %% ensure inputs are right
     v_0 = v_0(:) ;
@@ -71,7 +105,7 @@ function [T,Z,Z_plan] = quadrotor_planning_model(v_0,a_0,v_peak,t_plan,...
     
 %% compute v and a at t_plan
     if nargout > 2
-        Z_plan = match_trajectories(t_plan,T_to_peak,Z_to_peak) ;
+        z_plan = match_trajectories(t_plan,T_to_peak,Z_to_peak) ;
     end
     
 end
