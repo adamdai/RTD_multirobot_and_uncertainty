@@ -38,7 +38,7 @@ matlabFunction(x_dot, 'file','quadrotor_symbolic_planning_model_1D_to_peak',...
     'vars', {x u_dummy}) ;
 
 %% generate failsafe maneuver model
-% for each axis, compute the change in svelocity/accel
+% for each axis, compute the change in velocity/accel
 delta_v = v_f - v_peak - a_peak*t_to_stop ;
 delta_a = a_f - a_peak ;
 
@@ -58,12 +58,12 @@ matlabFunction(x_dot, 'file','quadrotor_symbolic_planning_model_1D_failsafe',...
 end
 
 %% helper function
-function [a,b,c] = single_axis_params(delta_v,delta_a,t)
+function [a,b,c] = single_axis_params(delta_v,delta_a,t_final)
     M = [0 0 ;
-         -12 6*t ;
-         6*t -2*t^2] ;
+         -12 6*t_final ;
+         6*t_final -2*t_final^2] ;
          
-    out = (1/t^3)*M*[delta_v ; delta_a] ;
+    out = (1/t_final^3)*M*[delta_v ; delta_a] ;
     a = out(1) ;
     b = out(2) ;
     c = out(3) ;
