@@ -5,9 +5,9 @@ t_sample = 0.1 ;
 t_total = 3 ;
 
 % test trajectory parameters
-v_0_test = -1 ;
-a_0_test = 1 ;
-v_peak_test = 1 ;
+v_0_test = [-10,5] ;
+a_0_test = [-5,5] ;
+v_peak_test = [10,3] ;
 
 %% automated from here
 % create symbolic parameters

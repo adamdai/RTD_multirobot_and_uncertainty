@@ -126,7 +126,7 @@ PRS.t_total = t_total ;
 PRS.t_sample = t_sample ;
 
 %% save output
-filename = ['quadrotor_PRS_sparse_v_max_',num2str(v_max),...
+filename = ['quadrotor_PRS_CORA_sparse_v_max_',num2str(v_max),...
             '_a_max_',num2str(a_max),'.mat'] ;
         
 save(filename,'PRS')
