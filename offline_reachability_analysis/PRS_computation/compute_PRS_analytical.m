@@ -13,7 +13,7 @@
 %% user parameters
 % timing
 t_peak = 1.5 ;
-t_sample = 0.1 ;
+t_sample = 0.5 ;
 t_total = 3 ;
 
 % whether or not to save the PRS to ./quadrotor_PRS_analytical.mat 
@@ -21,9 +21,9 @@ flag_save_PRS = false ;
 
 % test trajectory parameters for plotting (works for 1-, 2-, or 3-D)
 flag_test_PRS = true ; % set to false if you just want to make the PRS
-v_0_test = [-1;-3;2] ;
-a_0_test = [1;5;3] ;
-v_peak_test = [5;-2;4] ;
+v_0_test = 0 ;
+a_0_test = 10 ;
+v_peak_test = -1 ;
 
 %% automated from here
 % create symbolic parameters
@@ -64,6 +64,15 @@ p_sym_to_stop = make_single_axis_spline(a_to_stop,b_to_stop,c_to_stop,a_peak,v_p
 % create vector of sample times
 t_vec_to_peak = 0:t_sample:t_peak ;
 t_vec_to_stop = 0:t_sample:t_to_stop ;
+
+% make sure the end times are in the time vectors
+if t_vec_to_peak(end) < t_peak
+    t_vec_to_peak = [t_vec_to_peak, t_peak] ;
+end
+
+if t_vec_to_stop(end) < t_to_stop
+    t_vec_to_stop = [t_vec_to_stop, t_to_stop] ;
+end
 
 % create spline at each point in time
 p_sym_to_peak = subs(p_sym_to_peak,t,t_vec_to_peak) ;
@@ -128,18 +137,36 @@ if flag_test_PRS
     P = K * p_mat ;
     C = K * c_mat ;
     W = K * w_mat ;
-
-    %% generate different plots depending on the dimension of the input
+    
     % get dimension and number of boxes to plot
     n_dim = size(K,1) ;
     n_box = PRS.n_T ;
     
+    % generate the spline at a high-ish resolution
+    [T_fine,Z_fine] = quadrotor_planning_model(v_0_test,a_0_test,v_peak_test,...
+                                           t_peak,t_total,0.01) ;
+                                       
+    P_fine = Z_fine(1:n_dim,:) ;
+    p_peak = match_trajectories(t_peak,T_fine,P_fine) ;
+
+    %% generate different plots depending on the dimension of the input
     % setup figure
     figure(1) ; clf ; hold on ; grid on ;
     
     % plot!
     switch n_dim
         case 1
+            % plot the start and end of the trajectory
+            h_start = plot(0,P(1),'go','linewidth',1.5,...
+                'markersize',10,'markerfacecolor','g') ;
+            
+            h_end = plot(t_total,P(end),'rp','linewidth',1.5,...
+                'markersize',12,'markerfacecolor','r') ;
+            
+            % plot where the peak velocity occurs (approximately)
+            h_peak = plot(t_peak,p_peak,'bp','linewidth',1.5,...
+                'markersize',12,'markerfacecolor','b') ;
+            
             % plot the (time-varying) bounding boxes
             for idx = 1:n_box
                 V = make_box([t_sample,2*W(idx)],[T_c(idx) ; C(idx)]) ;
@@ -148,14 +175,13 @@ if flag_test_PRS
             end
             
             % plot the position trajectory
-            h_pos = plot(T_p,P,'b-','linewidth',1.5) ;
+            h_pos = plot(T_fine,P_fine,'b-','linewidth',1.5) ;
             plot(T_p,P,'b.','markersize',12) ;
             
             % labels
             xlabel('time [s]')
             ylabel('position [m]')
             title('1-D planning model trajectory')
-            legend([h_box,h_pos],'zono','traj')
         case 2
             axis equal ;
             
@@ -165,6 +191,10 @@ if flag_test_PRS
             h_end = plot_path(P(:,end),'rp','linewidth',1.5,...
                 'markersize',12,'markerfacecolor','r') ;
             
+            % plot where the peak velocity occurs (approximately)
+            h_peak = plot_path(p_peak,'bp','linewidth',1.5,...
+                'markersize',12,'markerfacecolor','b') ;
+            
             % plot the time-varying bounding boxes
             for idx = 1:n_box
                 V = make_box([2*W(1,idx),2*W(2,idx)],C(:,idx)) ;
@@ -173,15 +203,13 @@ if flag_test_PRS
             end
             
             % plot the position trajectory
-            h_pos = plot_path(P,'b-','linewidth',1.5) ;
+            h_pos = plot_path(P_fine,'b-','linewidth',1.5) ;
             plot_path(P,'b.','markersize',12) ;
             
             % labels
             xlabel('p_1 [m]')
             ylabel('p_2 [m]')
-            title('2-D planning model trajectory')
-            legend([h_box,h_pos,h_start,h_end],'zono','traj','start','end')
-            
+            title('2-D planning model trajectory')            
         case 3
             axis equal ;
             
@@ -191,6 +219,10 @@ if flag_test_PRS
             h_end = plot_path(P(:,end),'rp','linewidth',1.5,...
                 'markersize',12,'markerfacecolor','r') ;
             
+            % plot where the peak velocity occurs (approximately)
+            h_peak = plot_path(p_peak,'bp','linewidth',1.5,...
+                'markersize',12,'markerfacecolor','b') ;
+            
             % plot the time-varying bounding boxes
             for idx = 1:n_box
                 FV = make_cuboid_for_patch(2*W(1,idx),2*W(2,idx),2*W(3,idx),...
@@ -199,7 +231,7 @@ if flag_test_PRS
             end
             
             % plot the position trajectory
-            h_pos = plot_path(P,'b-','linewidth',1.5) ;
+            h_pos = plot_path(P_fine,'b-','linewidth',1.5) ;
             plot_path(P,'b.','markersize',12) ;
             
             % labels
@@ -207,7 +239,6 @@ if flag_test_PRS
             ylabel('p_2 [m]')
             zlabel('p_3 [m]')
             title('3-D planning model trajectory')
-            legend([h_box,h_pos,h_start,h_end],'zono','traj','start','end')
             
             view(3)
             
@@ -215,7 +246,9 @@ if flag_test_PRS
             error('Please pick 1-D, 2-D, or 3-D trajectory parameters.')
     end
     
-    % some cleanup
+    % finalize plot
+    legend([h_box,h_pos,h_start,h_end,h_peak],...
+                'zono','traj','start','end','peak')
     set(gca,'fontsize',15)
 end
 
@@ -232,5 +265,5 @@ function [a,b,c] = get_single_axis_params(delta_v,delta_a,t_final)
 end
 
 function p = make_single_axis_spline(a,b,c,a_0,v_0,t)
-    p = (a/120).*t.^5 + (b/24).*t.^4 + (c/6).*t.^3 + (a_0/2).*t^2 + v_0*t ;
+    p = (a/120).*t.^5 + (b/24).*t.^4 + (c/6).*t.^3 + (a_0/2).*t.^2 + v_0*t ;
 end
