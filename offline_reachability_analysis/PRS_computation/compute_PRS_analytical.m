@@ -13,7 +13,7 @@
 %% user parameters
 % timing
 t_peak = 1.5 ;
-t_sample = 0.5 ;
+t_sample = 0.1 ;
 t_total = 3 ;
 
 % whether or not to save the PRS to ./quadrotor_PRS_analytical.mat 
@@ -21,9 +21,9 @@ flag_save_PRS = false ;
 
 % test trajectory parameters for plotting (works for 1-, 2-, or 3-D)
 flag_test_PRS = true ; % set to false if you just want to make the PRS
-v_0_test = 0 ;
-a_0_test = 10 ;
-v_peak_test = -1 ;
+v_0_test = [1;1] ;
+a_0_test = [3;3] ;
+v_peak_test = [-2;2] ;
 
 %% automated from here
 % create symbolic parameters
