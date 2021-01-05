@@ -1,13 +1,13 @@
 %% description
-% This script computes a collection of linear operators (matrices!) that
-% represent our polynomial spline planning model for the quadrotor as a
-% sequence of axis-aligned boxes. This enables one to plug in arbitrary
-% initial and desired velocities and accelerations and generate the
-% corresponding spline and boxes (represented as zonotopes in terms of
-% centers and halfwidths).
+% This script computes a collection of linear operators that represent the
+% discrete-time linear planning model (LPM). This model uses trajectory
+% parameters that cause the planning model to accelerate from an initial
+% velocity v_0 and acceleration a_0 to a "peak" velocity v_peak at a time
+% t_peak, then accelerate to a final acceleration and velocity of 0 at time
+% t_total. The time discretization is pre-specified as t_sample.
 %
 % Authors: Shreyas Kousik
-% Created: 29 Dec 2020
+% Created: 5 Jan 2020
 % Updated: not yet
 %
 %% user parameters
@@ -16,14 +16,14 @@ t_peak = 1.5 ;
 t_sample = 0.1 ;
 t_total = 3 ;
 
-% whether or not to save the PRS to ./quadrotor_PRS_analytical.mat 
-flag_save_PRS = false ;
+% whether or not to save the mode to ./quadrotor_linear_planning_model.mat 
+flag_save_LPM = true ;
 
 % test trajectory parameters for plotting (works for 1-, 2-, or 3-D)
-flag_test_PRS = true ; % set to false if you just want to make the PRS
-v_0_test = -10 ;
-a_0_test = -10 ;
-v_peak_test = -1 ;
+flag_test_LPM = true ; % set to false if you just want to make the PRS
+v_0_test = -2 ;
+a_0_test = 1 ;
+v_peak_test = 3 ;
 
 %% automated from here
 % create symbolic parameters
@@ -59,8 +59,13 @@ delta_a_to_stop = a_f - a_peak ;
 
 % compute symbolic planning model position
 p_sym_to_stop = make_single_axis_spline(a_to_stop,b_to_stop,c_to_stop,a_peak,v_peak,t) ;
+v_sym_to_stop = diff(p_sym_to_stop,t) ;
+a_sym_to_stop = diff(v_sym_to_stop,t) ;
 
-%% create linear function for position spline
+% add position to peak for stopping trajectory
+p_sym_to_stop = p_sym_to_stop + subs(p_sym_to_peak,t,t_peak) ; 
+
+%% create linear function for position, velocity, and acceleration
 % create vector of sample times
 t_vec_to_peak = 0:t_sample:t_peak ;
 t_vec_to_stop = 0:t_sample:t_to_stop ;
@@ -74,81 +79,64 @@ if t_vec_to_stop(end) < t_to_stop
     t_vec_to_stop = [t_vec_to_stop, t_to_stop] ;
 end
 
-% create spline at each point in time
-p_sym_to_peak_vec = subs(p_sym_to_peak,t,t_vec_to_peak) ;
-p_sym_to_stop_vec = subs(p_sym_to_stop,t,t_vec_to_stop) ;
-p_sym = [p_sym_to_peak_vec, p_sym_to_peak_vec(end) + p_sym_to_stop_vec(2:end)] ;
+% create position, velocity, and acceleration splines at each point in time
+p_sym = eval_spline_at_times(p_sym_to_peak,p_sym_to_stop,t_vec_to_peak,t_vec_to_stop,t) ;
+v_sym = eval_spline_at_times(v_sym_to_peak,v_sym_to_stop,t_vec_to_peak,t_vec_to_stop,t) ;
+a_sym = eval_spline_at_times(a_sym_to_peak,a_sym_to_stop,t_vec_to_peak,t_vec_to_stop,t) ;
 
-% break spline up into vectors for each parameter
-s_vars = [v_0,a_0,v_peak] ;
-v_0_vec = double(subs(p_sym,s_vars,[1 0 0])) ;
-a_0_vec = double(subs(p_sym,s_vars,[0 1 0])) ;
-v_peak_vec = double(subs(p_sym,s_vars,[0 0 1])) ;
-p_mat = [v_0_vec ; a_0_vec ; v_peak_vec] ; % this is the linear function
+% collect symbolic trajectory parameters
+k_sym = [v_0,a_0,v_peak] ;
 
-%% create linear functions for bounding spline
-% the "trick" here is to use finite differencing on the points given by the
-% position spline (represented with p_mat) to get the centers and widths of
-% intervals that bound the positions traversed in each time interval of the
-% total time [0, t_total] partitioned by t_sample
+% get the linear operator representations for the splines
+p_mat = make_linear_spline_model(p_sym,k_sym) ;
+v_mat = make_linear_spline_model(v_sym,k_sym) ;
+a_mat = make_linear_spline_model(a_sym,k_sym) ;
 
-% timing
-T_p = t_sample.*(0:size(p_mat,2)-1) ;
-T_c = 0.5.*(T_p(2:end) + T_p(1:end-1)) ;
-
-% centers
-c_sym_k = 0.5.*(p_sym(2:end) + p_sym(1:(end-1))) ;
-v_0_c = double(subs(c_sym_k,s_vars,[1 0 0])) ;
-a_0_c = double(subs(c_sym_k,s_vars,[0 1 0])) ;
-v_peak_c = double(subs(c_sym_k,s_vars,[0 0 1])) ;
-c_mat = [v_0_c ; a_0_c ; v_peak_c] ; % linear func for centers
-
-% widths
-w_sym_k = 0.5.*(p_sym(2:end) - p_sym(1:(end-1))) ;
-v_0_w = double(subs(w_sym_k,s_vars,[1 0 0])) ;
-a_0_w = double(subs(w_sym_k,s_vars,[0 1 0])) ;
-v_peak_w = double(subs(w_sym_k,s_vars,[0 0 1])) ;
-w_mat = [v_0_w ; a_0_w ; v_peak_w] ; % linear func for widths
+% get the time vector for these splines
+T = t_sample.*(0:size(p_mat,2)-1) ;
 
 %% save output
 % create structure to save
-PRS.t_peak = t_peak ;
-PRS.t_total = t_total ;
-PRS.t_sample = t_sample ;
-PRS.T_positions = T_p ;
-PRS.T_centers = T_c ;
-PRS.positions = p_mat ;
-PRS.centers = c_mat ;
-PRS.widths = w_mat ;
-PRS.n_T = size(c_mat,2) ;
+LPM.t_peak = t_peak ;
+LPM.t_total = t_total ;
+LPM.t_sample = t_sample ;
+LPM.time = T ;
+LPM.position = p_mat ;
+LPM.velocity = v_mat ;
+LPM.acceleration = a_mat ;
 
 % save!
-if flag_save_PRS
-    filename = 'quadrotor_PRS_analytical.mat' ;
-    save(filename,'PRS')
+if flag_save_LPM
+    filename = 'quadrotor_linear_planning_model.mat ' ;
+    
+    disp('Saving linear planning model!')
+    save(filename,'LPM')
 end
 
-%% plot PRS
-if flag_test_PRS
+%% plot
+if flag_test_LPM
     %% set up parameter values of the appropriate dimension
     K = [v_0_test(:), a_0_test(:), v_peak_test(:)] ;
     
-    % get positions, centers, and widths
+    % get positions
     P = K * p_mat ;
-    C = K * c_mat ;
-    W = K * w_mat ;
-    
-    % get dimension and number of boxes to plot
-    n_dim = size(K,1) ;
-    n_box = PRS.n_T ;
+    V = K * v_mat ;
+    A = K * a_mat ;
     
     % generate the spline at a high-ish resolution
     [T_fine,Z_fine] = quadrotor_planning_model(v_0_test,a_0_test,v_peak_test,...
                                            t_peak,t_total,0.01) ;
                                        
+    n_dim = length(v_0_test) ;
+                                       
     P_fine = Z_fine(1:n_dim,:) ;
     p_peak = match_trajectories(t_peak,T_fine,P_fine) ;
-
+    
+    % numerically integrate the velocities and accelerations to get the
+    % position trajectory
+    P_num = cumsum(t_sample.*V + (t_sample^2/2).*A,2) ;
+    V_num = cumsum(t_sample.*A,2) ;
+    
     %% generate different plots depending on the dimension of the input
     % setup figure
     figure(1) ; clf ; hold on ; grid on ;
@@ -156,6 +144,9 @@ if flag_test_PRS
     % plot!
     switch n_dim
         case 1
+            % plot the positions
+            subplot(3,1,1) ; hold on ; grid on ;
+            
             % plot the start and end of the trajectory
             h_start = plot(0,P(1),'go','linewidth',1.5,...
                 'markersize',10,'markerfacecolor','g') ;
@@ -167,21 +158,35 @@ if flag_test_PRS
             h_peak = plot(t_peak,p_peak,'bp','linewidth',1.5,...
                 'markersize',12,'markerfacecolor','b') ;
             
-            % plot the (time-varying) bounding boxes
-            for idx = 1:n_box
-                V = make_box([t_sample,2*W(idx)],[T_c(idx) ; C(idx)]) ;
-                h_box = patch('faces',[1 2 3 4],'vertices',V(:,1:4)',...
-                    'EdgeColor','b','FaceColor','b','FaceAlpha',0.1) ;
-            end
-            
-            % plot the position trajectory
+            % plot the position trajectory given by the linear operator
             h_pos = plot(T_fine,P_fine,'b-','linewidth',1.5) ;
-            plot(T_p,P,'b.','markersize',12) ;
+            plot(T,P,'b.','markersize',12) ;
             
-            % labels
-            xlabel('time [s]')
-            ylabel('position [m]')
+            % plot the position trajectory given by numerical integration
+            h_num = plot(T,P_num,'r.','markersize',5) ;
+            
+            % finalize plot
+            ylabel('pos [m]')
             title('1-D planning model trajectory')
+            
+            legend([h_pos,h_start,h_end,h_peak,h_num],...
+                'traj','start','end','peak','num',...
+                'location','northwest')
+            
+            set(gca,'fontsize',15)
+            
+            % plot velocities
+            subplot(3,1,2) ; hold on ; grid on ;
+            plot(T,V,'b.','markersize',12) ;
+            ylabel('vel [m/s]') 
+            set(gca,'fontsize',15)
+            
+            % plot accelerations
+            subplot(3,1,3) ; hold on ; grid on ;
+            plot(T,A,'b.','markersize',12) ;
+            xlabel('time [s]')
+            ylabel('accel [m/s^2]') 
+            set(gca,'fontsize',15)
         case 2
             axis equal ;
             
@@ -194,13 +199,6 @@ if flag_test_PRS
             % plot where the peak velocity occurs (approximately)
             h_peak = plot_path(p_peak,'bp','linewidth',1.5,...
                 'markersize',12,'markerfacecolor','b') ;
-            
-            % plot the time-varying bounding boxes
-            for idx = 1:n_box
-                V = make_box([2*W(1,idx),2*W(2,idx)],C(:,idx)) ;
-                h_box = patch('faces',[1 2 3 4],'vertices',V(:,1:4)',...
-                    'EdgeColor','b','FaceColor','b','FaceAlpha',0.1) ;
-            end
             
             % plot the position trajectory
             h_pos = plot_path(P_fine,'b-','linewidth',1.5) ;
@@ -223,13 +221,6 @@ if flag_test_PRS
             h_peak = plot_path(p_peak,'bp','linewidth',1.5,...
                 'markersize',12,'markerfacecolor','b') ;
             
-            % plot the time-varying bounding boxes
-            for idx = 1:n_box
-                FV = make_cuboid_for_patch(2*W(1,idx),2*W(2,idx),2*W(3,idx),...
-                    C(:,idx)) ;
-                h_box = patch(FV,'EdgeColor','b','FaceColor','b','FaceAlpha',0.1) ;
-            end
-            
             % plot the position trajectory
             h_pos = plot_path(P_fine,'b-','linewidth',1.5) ;
             plot_path(P,'b.','markersize',12) ;
@@ -245,11 +236,6 @@ if flag_test_PRS
         otherwise
             error('Please pick 1-D, 2-D, or 3-D trajectory parameters.')
     end
-    
-    % finalize plot
-    legend([h_box,h_pos,h_start,h_end,h_peak],...
-                'zono','traj','start','end','peak')
-    set(gca,'fontsize',15)
 end
 
 %% helper functions
@@ -266,4 +252,17 @@ end
 
 function p = make_single_axis_spline(a,b,c,a_0,v_0,t)
     p = (a/120).*t.^5 + (b/24).*t.^4 + (c/6).*t.^3 + (a_0/2).*t.^2 + v_0*t ;
+end
+
+function s_sym = eval_spline_at_times(s_sym_to_peak,s_sym_to_stop,t_vec_to_peak,t_vec_to_stop,t)
+    s_sym_to_peak_vec = subs(s_sym_to_peak,t,t_vec_to_peak) ;
+    s_sym_to_stop_vec = subs(s_sym_to_stop,t,t_vec_to_stop) ;
+    s_sym = [s_sym_to_peak_vec, s_sym_to_stop_vec(2:end)] ;
+end
+
+function s_mat = make_linear_spline_model(s_sym,k_sym)
+    s_v_0_vec = double(subs(s_sym,k_sym,[1 0 0])) ;
+    s_a_0_vec = double(subs(s_sym,k_sym,[0 1 0])) ;
+    s_v_peak_vec = double(subs(s_sym,k_sym,[0 0 1])) ;
+    s_mat = [s_v_0_vec ; s_a_0_vec ; s_v_peak_vec] ; % this is the linear function
 end
