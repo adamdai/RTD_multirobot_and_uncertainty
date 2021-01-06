@@ -107,7 +107,7 @@ LPM.acceleration = a_mat ;
 
 % save!
 if flag_save_LPM
-    filename = 'quadrotor_linear_planning_model.mat ' ;
+    filename = 'quadrotor_linear_planning_model.mat' ;
     
     disp('Saving linear planning model!')
     save(filename,'LPM')
