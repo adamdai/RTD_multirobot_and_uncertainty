@@ -21,9 +21,9 @@ flag_save_LPM = true ;
 
 % test trajectory parameters for plotting (works for 1-, 2-, or 3-D)
 flag_test_LPM = true ; % set to false if you just want to make the PRS
-v_0_test = -2 ;
-a_0_test = 1 ;
-v_peak_test = 3 ;
+v_0_test = [-2,1,4] ;
+a_0_test = [1,2,3] ;
+v_peak_test = [3,-1,-2] ;
 
 %% automated from here
 % create symbolic parameters
@@ -142,8 +142,7 @@ if flag_test_LPM
     figure(1) ; clf ; hold on ; grid on ;
     
     % plot!
-    switch n_dim
-        case 1
+    if n_dim == 1
             % plot the positions
             subplot(3,1,1) ; hold on ; grid on ;
             
@@ -159,7 +158,7 @@ if flag_test_LPM
                 'markersize',12,'markerfacecolor','b') ;
             
             % plot the position trajectory given by the linear operator
-            h_pos = plot(T_fine,P_fine,'b-','linewidth',1.5) ;
+            h_pos = plot(T_fine,P_fine,'-','color',[0.7 0.7 1.0],'linewidth',1.5) ;
             plot(T,P,'b.','markersize',12) ;
             
             % plot the position trajectory given by numerical integration
@@ -187,7 +186,7 @@ if flag_test_LPM
             xlabel('time [s]')
             ylabel('accel [m/s^2]') 
             set(gca,'fontsize',15)
-        case 2
+    else
             axis equal ;
             
             % plot the start and end of the trajectory
@@ -201,40 +200,29 @@ if flag_test_LPM
                 'markersize',12,'markerfacecolor','b') ;
             
             % plot the position trajectory
-            h_pos = plot_path(P_fine,'b-','linewidth',1.5) ;
+            h_pos = plot_path(P_fine,'-','color',[0.7 0.7 1.0],'linewidth',1.5) ;
             plot_path(P,'b.','markersize',12) ;
+            
+            % plot the position trajectory given by numerical integration
+            h_num = plot_path(P_num,'r.','markersize',5) ;
             
             % labels
             xlabel('p_1 [m]')
             ylabel('p_2 [m]')
-            title('2-D planning model trajectory')            
-        case 3
-            axis equal ;
             
-            % plot the start and end of the trajectory
-            h_start = plot_path(P(:,1),'go','linewidth',1.5,...
-                'markersize',10,'markerfacecolor','g') ;
-            h_end = plot_path(P(:,end),'rp','linewidth',1.5,...
-                'markersize',12,'markerfacecolor','r') ;
+            if n_dim == 2
+                title('2-D planning model trajectory')
+            else
+                zlabel('p_3 [m]')
+                title('3-D planning model trajectory')
+                view(3)
+            end
             
-            % plot where the peak velocity occurs (approximately)
-            h_peak = plot_path(p_peak,'bp','linewidth',1.5,...
-                'markersize',12,'markerfacecolor','b') ;
+            legend([h_pos,h_start,h_end,h_peak,h_num],...
+                'traj','start','end','peak','num',...
+                'location','northwest')
             
-            % plot the position trajectory
-            h_pos = plot_path(P_fine,'b-','linewidth',1.5) ;
-            plot_path(P,'b.','markersize',12) ;
-            
-            % labels
-            xlabel('p_1 [m]')
-            ylabel('p_2 [m]')
-            zlabel('p_3 [m]')
-            title('3-D planning model trajectory')
-            
-            view(3)
-            
-        otherwise
-            error('Please pick 1-D, 2-D, or 3-D trajectory parameters.')
+            set(gca,'fontsize',15)
     end
 end
 
