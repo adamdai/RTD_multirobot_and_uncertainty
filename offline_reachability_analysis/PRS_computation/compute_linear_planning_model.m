@@ -6,9 +6,25 @@
 % t_peak, then accelerate to a final acceleration and velocity of 0 at time
 % t_total. The time discretization is pre-specified as t_sample.
 %
+% This script saves the LPM as a structure to a file named
+%
+%   quadrotor_linear_planning_model.mat
+%
+% The LPM structure has fields for the constants t_peak, t_total, and
+% t_sample. It also contains the position, velocity, and acceleration as
+% matrices representing the LPM. Suppose that k \in K is a given trajectory
+% parameter. Then the positions at the times in LPM.time are given by
+%
+%   P = k' * LPM.position,
+%
+% and similarly for the velocities and accelerations. To see how these
+% work, change the trajectory parameters in v_0_test, a_0_test, and
+% v_peak_test (which can be 1-D, 2-D, or 3-D, as long as they are all of
+% the same dimension).
+%
 % Authors: Shreyas Kousik
 % Created: 5 Jan 2020
-% Updated: not yet
+% Updated: 5 Jan 2020
 %
 %% user parameters
 % timing
@@ -17,13 +33,13 @@ t_sample = 0.1 ;
 t_total = 3 ;
 
 % whether or not to save the mode to ./quadrotor_linear_planning_model.mat 
-flag_save_LPM = true ;
+flag_save_LPM = false ;
 
 % test trajectory parameters for plotting (works for 1-, 2-, or 3-D)
 flag_test_LPM = true ; % set to false if you just want to make the PRS
-v_0_test = [-2,1,4] ;
-a_0_test = [1,2,3] ;
-v_peak_test = [3,-1,-2] ;
+v_0_test = 2 ;
+a_0_test = -5 ;
+v_peak_test = 3 ;
 
 %% automated from here
 % create symbolic parameters
@@ -93,7 +109,7 @@ v_mat = make_linear_spline_model(v_sym,k_sym) ;
 a_mat = make_linear_spline_model(a_sym,k_sym) ;
 
 % get the time vector for these splines
-T = t_sample.*(0:size(p_mat,2)-1) ;
+T = [t_vec_to_peak, t_vec_to_stop(2:end) + t_peak] ;
 
 %% save output
 % create structure to save
@@ -118,7 +134,7 @@ if flag_test_LPM
     %% set up parameter values of the appropriate dimension
     K = [v_0_test(:), a_0_test(:), v_peak_test(:)] ;
     
-    % get positions
+    % get positions, velocities, and accelerations
     P = K * p_mat ;
     V = K * v_mat ;
     A = K * a_mat ;
@@ -134,8 +150,8 @@ if flag_test_LPM
     
     % numerically integrate the velocities and accelerations to get the
     % position trajectory
-    P_num = cumsum(t_sample.*V + (t_sample^2/2).*A,2) ;
-    V_num = cumsum(t_sample.*A,2) ;
+    P_num = [zeros(n_dim,1), cumsum(t_sample.*V(:,1:end-1) + (t_sample^2/2).*A(:,1:end-1),2)] ;
+    V_num = [v_0_test(:), cumsum(t_sample.*A(:,1:end-1),2) + v_0_test(:)] ;
     
     %% generate different plots depending on the dimension of the input
     % setup figure
@@ -162,7 +178,7 @@ if flag_test_LPM
             plot(T,P,'b.','markersize',12) ;
             
             % plot the position trajectory given by numerical integration
-            h_num = plot(T,P_num,'r.','markersize',5) ;
+            h_num = plot(T,P_num,'r.','markersize',7) ;
             
             % finalize plot
             ylabel('pos [m]')
@@ -177,7 +193,9 @@ if flag_test_LPM
             % plot velocities
             subplot(3,1,2) ; hold on ; grid on ;
             plot(T,V,'b.','markersize',12) ;
+            plot(T,V_num,'r.','markersize',7) ;
             ylabel('vel [m/s]') 
+            legend('lin','num','location','northwest')
             set(gca,'fontsize',15)
             
             % plot accelerations
