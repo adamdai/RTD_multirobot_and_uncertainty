@@ -7,25 +7,28 @@
 % Updated: 7 Jan 2021
 clear
 %% user parameters
+% plotting parameters
+flag_save_gif = false ;
+
 % simulation timing parameters
-t_sim_total = 10 ; % [s]
+t_sim_total = 5 ; % [s]
 t_sim_sample = 0.02 ; % [s]
 
 % world and obstacle parameters (obstacles are all static for now)
 n_dim = 2 ;
-world_bounds = [-3,3,-3,3] ; % 2-D world
-n_obs = 1 ;
+world_bounds = 5.*[-1,1,-1,1] ; % 2-D world
+n_obs = 5 ;
 r_obs_min = 0.1 ; % minimum obstacle radius [m]
-r_obs_max = 0.2 ; % maximum obstacle radius [m]
+r_obs_max = 1.0 ; % maximum obstacle radius [m]
 
 % agent parameters (each of these should be a vector of length n_agents)
 t_delay_start = 0.3 ; % [s] how long to delay planning start for each agent 
 r_agents = 0.5 ; % [m]
 
 % planning parameters
-t_plan = [0.1 1.0 0.3 0.2] ; % [s] amount of time allotted for planning
-v_max = 2 ; % [m/s] max allowed velocity (enforced with 2-norm)
-delta_v_peak_max = 0.5 ; % [m/s] max 2-norm change in v_peak allowed between plans
+t_plan = [0.1 0.2 0.1] ; % [s] amount of time allotted for planning
+v_max = 5 ; % [m/s] max allowed velocity (enforced with 2-norm)
+delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 n_plan_max = 10000 ; % max number of plans to evaluate
 
 %% automated from here
@@ -73,7 +76,7 @@ O_rad_mat = repmat(O_rad(:),1,n_t_plan) + r_agents ;
 
 % generate random goal positions
 flag_goal_feas = false ;
-O_rad_goal_mat = repmat(O_rad(:),1,n_agents) + r_agents ;
+O_rad_goal_mat = repmat(O_rad(:),1,n_agents) + 2*r_agents ;
 while ~flag_goal_feas
     % create random positions
     p_goal = rand_in_bounds(world_bounds,[],[],n_agents) ;
@@ -88,7 +91,7 @@ end
 
 %% plot setup
 figure(1) ; clf ; axis equal ; hold on ; grid on ;
-axis(1.5.*(world_bounds))
+axis(1.25.*(world_bounds))
 
 % start positions
 plot_path(agent_state(1:n_dim,:),'go','markersize',12,'linewidth',1.5)
@@ -97,12 +100,8 @@ plot_path(agent_state(1:n_dim,:),'go','markersize',12,'linewidth',1.5)
 plot_path(p_goal,'gp','markersize',12,'markerfacecolor','g')
 
 % obstacles
-theta = linspace(0,2*pi) ;
-p_1 = cos(theta) ;
-p_2 = sin(theta) ;
 for idx = 1:n_obs
-    o_idx = O_rad(idx)*[p_1 ; p_2] + O_ctr(:,idx) ;
-    patch('faces',[1:100,1],'vertices',o_idx','facecolor','r','edgecolor','r',...
+    plot_disc(O_rad(idx),O_ctr(:,idx),'facecolor','r','edgecolor','r',...
         'facealpha',0.1)
 end
 
@@ -111,8 +110,8 @@ plot_data_agents = [] ;
 plot_data_plans = [] ;
 for idx_agent = 1:n_agents
     % plot agent
-    h_agent = plot_path(agent_state(1:n_dim,idx_agent),'bo',...
-        'markersize',10,'linewidth',1.5) ;
+    h_agent = plot_disc(r_agents,agent_state(1:n_dim,idx_agent),...
+        'facecolor','b','edgecolor','b','facealpha',0.1) ;
     plot_data_agents = [plot_data_agents, h_agent] ;
     
     % plot plans
@@ -215,8 +214,12 @@ for idx = 1:n_t_sim
                 end
                 
                 % check against obstacles
-                D_obs = dist_points_to_points(O_ctr,P_idx) ;
-                chk_obs = all(D_obs(:) < O_rad_mat(:)) ;
+                if ~isempty(O_ctr)
+                    D_obs = dist_points_to_points(O_ctr,P_idx) ;
+                    chk_obs = any(D_obs(:) < O_rad_mat(:)) ;
+                else
+                    chk_obs = false ;
+                end
                 
                 % decide feasibility
                 if ~chk_others && ~chk_obs
@@ -280,16 +283,19 @@ for idx = 1:n_t_sim
         
         %% plotting agents
         % plot agent
-        plot_data_agents(idx_agent).XData = agent_state(1,idx_agent) ;
-        plot_data_agents(idx_agent).YData = agent_state(2,idx_agent) ;
-        
-        % for 3-D
-        if n_dim == 3
-            plot_data_agents(idx_agent).ZData = agent_state(3,idx_agent) ;
+        if n_dim == 2
+            V_new = make_circle(r_agents,100,agent_state(1:2,idx_agent)) ;
+            plot_data_agents(idx_agent).Vertices = V_new' ;
+        else
+            error('3-D plot not done yet!')
         end
     end
     %% pause for plots to update
-    pause(t_sim_sample)
+    if flag_save_gif
+        error('ope')
+    else
+        pause(t_sim_sample)
+    end
 end
 
 %% helper functions
