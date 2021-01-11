@@ -235,8 +235,10 @@ for idx = 1:n_t_sim
                disp('    found no new plan')
                
                T_log = T_old >= t_sim ;
-               T_new = T_old(T_log) ;
-               X_new = X_old(:,T_log) ;              
+               
+               % also, increase the length of the old plan by t_plan
+               T_new = [T_old(T_log), T_old(end) + t_plan(idx_agent)] ;
+               X_new = [X_old(:,T_log), X_old(:,end)] ;              
             else
                % otherwise, create a new plan
                disp('    found new plan')
@@ -249,6 +251,12 @@ for idx = 1:n_t_sim
             %% planning wrap up
             % append the previous trajectory to the new trajectory
             T_old_log = T_old < T_new(1) ;
+            
+            if isempty(T_new)
+                dbstop in testing_LPM_multi_agent_planning at 257
+                disp('hi')
+            end
+            
             T_new = [T_old(T_old_log), T_new] ;
             X_new = [X_old(:,T_old_log), X_new] ;
             
