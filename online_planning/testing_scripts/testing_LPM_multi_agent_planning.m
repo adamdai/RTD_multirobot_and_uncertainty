@@ -8,7 +8,9 @@
 clear ; clc
 %% user parameters
 % plotting parameters
-flag_save_gif = false ;
+flag_save_gif = true ;
+gif_delay_time = 1/20 ; % 1/fps
+gif_filename = 'multi_agent_planning.gif' ;
 
 % simulation timing parameters
 t_sim_total = 5 ; % [s]
@@ -112,6 +114,18 @@ for idx_agent = 1:n_agents
     % plot plans
     h_plans = plot_path(plans_committed{2,idx_agent}(1:n_dim,:),'-','color',[0.5 0.5 1],'linewidth',1.25) ;
     plot_data_plans = [plot_data_plans, h_plans] ;
+end
+
+%% set up to save gif
+if flag_save_gif
+    % get current figure
+    fh = get(groot,'CurrentFigure') ;
+    frame = getframe(fh) ;
+    im = frame2im(frame);
+    [imind,cm] = rgb2ind(im,256);
+    
+    imwrite(imind,cm,gif_filename,'gif', 'Loopcount',inf,...
+        'DelayTime',gif_delay_time) ;
 end
 
 %% run simulation
@@ -353,8 +367,16 @@ for idx = 1:n_t_sim
         end
     end
     %% pause for plots to update
-    if flag_save_gif
-        error('ope')
+    if flag_save_gif && (mod(t_sim,gif_delay_time) < 1e-6)
+        % get current figure
+        fh = get(groot,'CurrentFigure') ;
+        frame = getframe(fh) ;
+        im = frame2im(frame);
+        [imind,cm] = rgb2ind(im,256);
+    
+        % append to gif
+        imwrite(imind,cm,gif_filename,'gif','WriteMode','append',...
+            'DelayTime',gif_delay_time) ;
     else
         pause(t_sim_sample)
     end
