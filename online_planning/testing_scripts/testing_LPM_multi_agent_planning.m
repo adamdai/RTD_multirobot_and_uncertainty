@@ -11,8 +11,8 @@ clear
 flag_save_gif = false ;
 
 % simulation timing parameters
-t_sim_total = 5 ; % [s]
-t_sim_sample = 0.02 ; % [s]
+t_sim_total = 6 ; % [s]
+t_sim_sample = 0.01 ; % [s]
 
 % world and obstacle parameters (obstacles are all static for now)
 n_dim = 2 ;
@@ -21,14 +21,15 @@ n_obs = 5 ;
 r_obs_min = 0.1 ; % minimum obstacle radius [m]
 r_obs_max = 1.0 ; % maximum obstacle radius [m]
 
-% agent parameters (each of these should be a vector of length n_agents)
-t_delay_start = 0.3 ; % [s] how long to delay planning start for each agent 
+% agent parameters
 r_agents = 0.5 ; % [m]
+v_max = 5 ; % [m/s] max allowed velocity (enforced with 2-norm)
+delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 
 % planning parameters
 t_plan = [0.1 0.2 0.1] ; % [s] amount of time allotted for planning
-v_max = 5 ; % [m/s] max allowed velocity (enforced with 2-norm)
-delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
+t_check = [0.01 0.01 0.01] ; % [s] amount of time allotted for check
+t_recheck = [0.01 0.01 0.01] ; % [s] amount of time allotted for recheck
 n_plan_max = 10000 ; % max number of plans to evaluate
 
 %% automated from here
@@ -50,17 +51,21 @@ agent_state = [rand_in_bounds(world_bounds,[],[],n_agents) ;
 
 % set up agent timing
 t_next_plan = zeros(1,n_agents) ; % each agent will replan at this time
+t_next_check = t_plan ; % each agent will check its plan at this time
+t_next_recheck = t_plan + t_check ;
+t_committed = nan(1,n_agents) ;
 n_t_plan = length(LPM.time) ;
 
 % initialize cells to store the plan history of each agent; the first cell
 % row contains the time vector for the current plan, and the second row
 % contains the plan itself as a 3-by-n_t_agent list of positions
-plans = cell(2,n_agents) ;
+plans_committed = cell(2,n_agents) ;
+plans_pending = cell(2,n_agents) ;
 
 % populate the agent plans list with initial plans
 for idx_agent = 1:n_agents
-    plans{1,idx_agent} = LPM.time ;
-    plans{2,idx_agent} = repmat(agent_state(:,idx_agent),1,length(LPM.time)) ;
+    plans_committed{1,idx_agent} = LPM.time ;
+    plans_committed{2,idx_agent} = repmat(agent_state(:,idx_agent),1,length(LPM.time)) ;
 end
 
 % planning limits
@@ -115,11 +120,12 @@ for idx_agent = 1:n_agents
     plot_data_agents = [plot_data_agents, h_agent] ;
     
     % plot plans
-    h_plans = plot_path(plans{2,idx_agent}(1:n_dim,:),'-','color',[0.5 0.5 1],'linewidth',1.25) ;
+    h_plans = plot_path(plans_committed{2,idx_agent}(1:n_dim,:),'-','color',[0.5 0.5 1],'linewidth',1.25) ;
     plot_data_plans = [plot_data_plans, h_plans] ;
 end
 
 %% run simulation
+tic_real_time = tic ;
 for idx = 1:n_t_sim
     % get the current time
     t_sim = T_sim_vec(idx) ;
@@ -131,8 +137,8 @@ for idx = 1:n_t_sim
     for idx_agent = 1:n_agents
         %% setup
         % get the current agent's plan
-        T_old = plans{1,idx_agent} ;
-        X_old = plans{2,idx_agent} ;
+        T_old = plans_committed{1,idx_agent} ;
+        X_old = plans_committed{2,idx_agent} ;
         
         %% planning
         % if the current time is the current agent's next replan time, then
@@ -157,22 +163,8 @@ for idx = 1:n_t_sim
             % get the current plans of all other agents, and buffer them by
             % the amount of time extra that is needed to cover the duration
             % of our current plan
-            idx_other_agents = 1:n_agents ;
-            idx_other_agents(idx_agent) = [] ; % indices of other agents
-            
-            P_other = [] ;
-            for idx_other = idx_other_agents
-                % get the time and plan
-                T_idx = plans{1,idx_other} ;
-                P_idx = plans{2,idx_other}(1:n_dim,:) ;
-                
-                % get all the parts of the plan that are relevant to the
-                % current agent's new plan
-                P_idx = match_trajectories(T_new,T_idx,P_idx) ;
-                
-                % add the new plan to the old plan
-                P_other = [P_other, P_idx] ; % should preallocate this
-            end
+            P_other = get_other_agents_committed_plans(n_agents,...
+                idx_agent,plans_committed,n_dim,T_new) ;
             
             %% find new plan
             % get a bunch of random potential v_peaks
@@ -206,12 +198,7 @@ for idx = 1:n_t_sim
                 P_idx = [v_0, a_0, v_peak]*LPM.position + repmat(p_0,1,n_t_plan) ;
                 
                 % check against the other plans
-                if ~isempty(P_other)
-                    dist_to_others = vecnorm(P_other - repmat(P_idx,1,n_agents-1));
-                    chk_others = any(dist_to_others <= 2*r_agents) ;
-                else
-                    chk_others = false ;
-                end
+                chk_others = check_agent_plan_collisions(P_other,P_idx,n_agents,r_agents) ;
                 
                 % check against obstacles
                 if ~isempty(O_ctr)
@@ -253,25 +240,24 @@ for idx = 1:n_t_sim
             T_old_log = T_old < T_new(1) ;
             
             if isempty(T_new)
-                dbstop in testing_LPM_multi_agent_planning at 257
+                dbstop in testing_LPM_multi_agent_planning at 258
                 disp('hi')
             end
             
             T_new = [T_old(T_old_log), T_new] ;
             X_new = [X_old(:,T_old_log), X_new] ;
             
-            % update plans object
-            plans{1,idx_agent} = T_new ;
-            plans{2,idx_agent} = X_new ;
+            % update plans pending
+            plans_pending{1,idx_agent} = T_new ;
+            plans_pending{2,idx_agent} = X_new ;
             
-            % set the time at which to begin checking the current plan and
-            % to begin replanning
-            t_next_plan(idx_agent) = t_next_plan(idx_agent) + t_plan(idx_agent) ;
+            % set the times to begin checking, rechecking, and replanning
+            t_next_check(idx_agent) = t_sim + t_check(idx_agent) ;
+            t_next_recheck(idx_agent) = t_sim + t_check(idx_agent) + t_recheck(idx_agent) ;
+            t_next_plan(idx_agent) = t_next_recheck(idx_agent) + t_plan(idx_agent) ;
         
             % figure out how much time was spent
             t_plan_spent = toc(tic_start_plan) ;
-            
-            %% checking
             
             %% plotting plans
             % plot new plan
@@ -279,9 +265,60 @@ for idx = 1:n_t_sim
             plot_data_plans(idx_agent).YData = X_new(2,:) ;
             
             % for 3-D
-        if n_dim == 3
-            plot_data_plans(idx_agent).ZData = X_new(3,:) ;
-        end
+            if n_dim == 3
+                plot_data_plans(idx_agent).ZData = X_new(3,:) ;
+            end
+        %% checking
+        elseif t_sim >= t_next_check(idx_agent)
+            tic_start_check = tic ;
+            
+            % get the pending plan
+            T_pend = plans_pending{1,idx_agent} ;
+            P_pend = plans_pending{2,idx_agent}(1:n_dim,:) ;
+            
+            if ~isempty(P_pend)
+                % get the committed trajectories of all other agents
+                P_other = get_other_agents_committed_plans(n_agents,...
+                    idx_agent,plans_committed,n_dim,T_new) ;
+                
+                % check against the other plans
+                chk_others = check_agent_plan_collisions(P_other,P_pend,...
+                    n_agents,r_agents) ;
+                
+                % make sure we didn't take too much time
+                t_spent_checking = toc(tic_start_check) ;
+                chk_others = chk_others && (t_spent_checking < t_check(idx_agent)) ;
+                 
+                % if the agent failed the check, discard its pending plan
+                if ~chk_others
+                    plans_pending{1,idx_agent} = [] ;
+                    plans_pending{2,idx_agent} = [] ;
+                end
+            end
+            
+        %% rechecking
+        elseif t_sim >= t_next_recheck(idx_agent)
+            % get the current pending plan
+            T_pend = plans_pending{1,idx_agent} ;
+            P_pend = plans_pending{2,idx_agent}(1:n_dim,:) ;
+            chk_empty = ~isempty(P_pend) ;
+            
+            % check if other agents have published a plan during our check
+            idx_other_agents = 1:n_agents ;
+            idx_other_agents(idx_agent) = [] ; % indices of other agents
+            t_committed_others = t_committed(idx_other_agents) ;
+            chk_others_pub = any((t_committed_others >= t_next_check(idx_agent)) & ...
+                (t_sim < t_committed_others)) ;
+            
+            % if the current pending plan is nonempty and no new plans have
+            % been published since the current agent began checking, then
+            % we're ok to commit to our new plan
+            if chk_empty && chk_others_pub
+                % if the plan check was ok, commit it
+                plans_committed{1,idx_agent} = T_pend ; % time
+                plans_committed{2,idx_agent} = X_pend ; % traj
+                t_committed(idx_agent) = t_sim ;
+            end
         end
         
         %% state update
@@ -306,4 +343,32 @@ for idx = 1:n_t_sim
     end
 end
 
+toc(tic_real_time)
 %% helper functions
+function P_other = get_other_agents_committed_plans(n_agents,idx_agent,plans_committed,n_dim,T_new)
+    idx_other_agents = 1:n_agents ;
+    idx_other_agents(idx_agent) = [] ; % indices of other agents
+
+    P_other = [] ;
+    for idx_other = idx_other_agents
+        % get the time and plan
+        T_idx = plans_committed{1,idx_other} ;
+        P_idx = plans_committed{2,idx_other}(1:n_dim,:) ;
+
+        % get all the parts of the plan that are relevant to the
+        % current agent's new plan
+        P_idx = match_trajectories(T_new,T_idx,P_idx) ;
+
+        % add the new plan to the old plan
+        P_other = [P_other, P_idx] ; % should preallocate this
+    end
+end
+
+function chk_others = check_agent_plan_collisions(P_other,P_agent,n_agents,r_agents)
+    if ~isempty(P_other)
+        dist_to_others = vecnorm(P_other - repmat(P_agent,1,n_agents-1));
+        chk_others = any(dist_to_others <= 2*r_agents) ;
+    else
+        chk_others = false ;
+    end
+end
