@@ -8,7 +8,7 @@
 clear ; clc
 %% user parameters
 % plotting parameters
-flag_save_gif = true ;
+flag_save_gif = false ;
 gif_delay_time = 1/20 ; % 1/fps
 gif_filename = 'multi_agent_planning.gif' ;
 
@@ -22,16 +22,19 @@ world_bounds = 4.*[-1,1,-1,1] ; % 2-D world
 n_obs = 5 ;
 r_obs_min = 0.1 ; % minimum obstacle radius [m]
 r_obs_max = 0.5 ; % maximum obstacle radius [m]
+r_goal_reached = 0.1 ; % [m] stop planning when within this dist of goal
 
 % agent parameters
 r_agents = 0.5 ; % [m]
 v_max = 5 ; % [m/s] max allowed velocity (enforced with 2-norm)
 delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 
-% planning parameters
-t_plan = [0.1 0.2 0.1] ; % [s] amount of time allotted for planning
-t_check = [0.01 0.01 0.01] ; % [s] amount of time allotted for check
-t_recheck = [0.01 0.01 0.01] ; % [s] amount of time allotted for recheck
+% planning parameters -- note that the length of t_plan, t_check, and
+% t_recheck should be the same, and equal to the number of agents that you
+% want to tootle around
+t_plan = [0.1 0.2 0.1 0.5] ; % [s] amount of time allotted for planning
+t_check = [0.01 0.01 0.01 0.02] ; % [s] amount of time allotted for check
+t_recheck = [0.01 0.01 0.01 0.01] ; % [s] amount of time allotted for recheck
 n_plan_max = 10000 ; % max number of plans to evaluate
 
 %% automated from here
@@ -53,15 +56,17 @@ t_next_recheck = t_plan + t_check ;
 t_committed = zeros(1,n_agents) ;
 n_t_plan = length(LPM.time) ;
 
-% planning limits
-V_bounds = delta_v_peak_max.*repmat([-1,1],1,n_dim) ;
+% set up check for goal reached
+flag_goal_reached = false(1,n_agents) ;
 
 %% world setup
 % generate uniformly-distributed random obstacles
 O_ctr = rand_in_bounds(world_bounds,[],[],n_obs) ; % obstacle positions
 O_rad = rand_range(r_obs_min,r_obs_max,[],[],1,n_obs) ;
 
-% set up obstacle radii for checking
+% set up obstacle radii, buffered by agent radii, so that collision
+% checking is a little bit faster; by using this, we can treat the agents
+% and obstacles as point masses
 O_rad_mat = repmat(O_rad(:),1,n_t_plan) + r_agents ;
 
 % create random start and goal locations that are feasible to get to
@@ -79,6 +84,9 @@ agent_state = [P_start ;
 % contains the plan itself as a 3-by-n_t_agent list of positions
 plans_committed = cell(2,n_agents) ;
 plans_pending = cell(2,n_agents) ;
+
+% planning limits
+V_bounds = delta_v_peak_max.*repmat([-1,1],1,n_dim) ;
 
 % populate the agent plans list with initial plans where they stay in place
 for idx_agent = 1:n_agents
@@ -129,6 +137,8 @@ if flag_save_gif
 end
 
 %% run simulation
+t_spent_recheck = 0 ;
+
 tic_real_time = tic ;
 for idx = 1:n_t_sim
     % get the current time
@@ -144,10 +154,10 @@ for idx = 1:n_t_sim
         T_old = plans_committed{1,idx_agent} ;
         X_old = plans_committed{2,idx_agent} ;
         
+        if t_sim >= t_next_plan(idx_agent) && (~flag_goal_reached(idx_agent))
         %% planning
         % if the current time is the current agent's next replan time, then
         % that agent needs to replan (duh)
-        if t_sim >= t_next_plan(idx_agent)
             disp(['  agent ',num2str(idx_agent),' planning'])
             
             %% planning setup
@@ -170,32 +180,49 @@ for idx = 1:n_t_sim
             P_other = get_other_agents_committed_plans(n_agents,...
                 idx_agent,plans_committed,n_dim,T_new) ;
             
-            %% find new plan
-            % get a bunch of random potential v_peaks
+            %% find new plan (i.e., perform trajectory optimization)
+            % this is using a sampling-based approach to attempt to find a
+            % new plan for the current agent within time t_plan; note that
+            % time is "paused" artificially during this trajectory
+            % optimization
+            
+            % get a bunch of random potential v_peak samples
             V_peak = rand_in_bounds(V_bounds,[],[],n_plan_max) ;
+            
+            % eliminate samples that exceed the max velocity and max delta
+            % from the initial velocity
             V_peak_mag = vecnorm(V_peak) ;
             delta_V_peak_mag = vecnorm(V_peak - repmat(v_0,1,n_plan_max)) ;
             V_peak_test = (V_peak_mag > v_max | delta_V_peak_mag > delta_v_peak_max) ;
             V_peak(:,V_peak_test) = [] ;
+            
+            % get the number of potentially-feasible samples to iterate
+            % through
             n_V_peak = size(V_peak,2) ;
             
-            % get the final positions for each of these v_peaks
+            % get the final positions for each of these v_peaks; this is
+            % used to compute the cost of every v_peak sample, because we
+            % want to minimize the distance between each trajectory's final
+            % position and the global goal
             LPM_p_final = LPM.position(:,end) ;
-            p_from_v_and_a_0 = [v_0, a_0] * LPM_p_final(1:2) + p_0 ;
-            p_from_v_peak = LPM_p_final(3) * V_peak + repmat(p_from_v_and_a_0,1,n_V_peak) ;
+            P_from_v_0_and_a_0 = [v_0, a_0] * LPM_p_final(1:2) + p_0 ; % plug in v_0 and a_0
+            P_from_v_peak = LPM_p_final(3) * V_peak + repmat(P_from_v_0_and_a_0,1,n_V_peak) ; % plug in v_peak
             
-            % sort these V_peaks by their suboptimality in terms of
+            % the array P_from_v_peak is of size n_dim x n_V_peak; each ith
+            % column in this array is the final position achieved by the
+            % trajectory parameterized by k = (v_0, a_0, V_peak(:,i))
+            
+            % sort these V_peaks by their (sub)optimality in terms of
             % distance of each final position to the global goal
-            dist_to_goal = vecnorm(p_from_v_peak - repmat(P_goal(:,idx_agent),1,n_V_peak)) ;
+            dist_to_goal = vecnorm(P_from_v_peak - repmat(P_goal(:,idx_agent),1,n_V_peak)) ;
             [~,V_sort_idxs] = sort(dist_to_goal,'ascend') ;
             V_peak = V_peak(:,V_sort_idxs) ;
             
             % iterate through the V_peaks until one is feasible
             idx_v_peak = 1 ;
-            flag_v_peak_infeas = true ; % pessimism
+            flag_v_peak_feas = false ; % pessimism
             while ((idx_v_peak <= n_V_peak) && ...
-                   (toc(tic_start_plan) < t_plan(idx_agent)) && ...
-                   flag_v_peak_infeas)
+                   (toc(tic_start_plan) < t_plan(idx_agent)))
                 
                 % get the position trajectory for the current v_peak
                 v_peak = V_peak(:,idx_v_peak) ;
@@ -212,16 +239,17 @@ for idx = 1:n_t_sim
                     chk_obs = false ;
                 end
                 
-                % decide feasibility
+                % stop optimizing if found a feasible plan
                 if chk_others && chk_obs
-                    flag_v_peak_infeas = false ;
+                    flag_v_peak_feas = true ;
+                    break
+                else
+                    % increment index
+                    idx_v_peak = idx_v_peak + 1 ;
                 end
-                
-                % increment index
-                idx_v_peak = idx_v_peak + 1 ;
             end
             
-            if flag_v_peak_infeas
+            if ~flag_v_peak_feas
                % if no new plan was found, continue the previous plan
                disp('    found no new plan')
                
@@ -237,17 +265,17 @@ for idx = 1:n_t_sim
                X_new = [[v_0, a_0, v_peak]*LPM.position + repmat(p_0,1,n_t_plan) ;
                         [v_0, a_0, v_peak]*LPM.velocity ;
                         [v_0, a_0, v_peak]*LPM.acceleration] ;
-            end
+                    
+               
+               % check if the global goal has been reached
+               if vecnorm(X_new(1:n_dim,end) - P_goal(:,idx_agent)) < r_goal_reached
+                   flag_goal_reached(idx_agent) = true ;
+               end
+            end           
             
             %% planning wrap up
             % append the previous trajectory to the new trajectory
             T_old_log = T_old < T_new(1) ;
-            
-            if isempty(T_new)
-                dbstop in testing_LPM_multi_agent_planning at 258
-                disp('hi')
-            end
-            
             T_new = [T_old(T_old_log), T_new] ;
             X_new = [X_old(:,T_old_log), X_new] ;
             
@@ -255,10 +283,17 @@ for idx = 1:n_t_sim
             plans_pending{1,idx_agent} = T_new ;
             plans_pending{2,idx_agent} = X_new ;
             
-            % set the times to begin checking, rechecking, and replanning
-            t_next_check(idx_agent) = t_sim + t_plan(idx_agent) ;
-            t_next_recheck(idx_agent) = t_next_check(idx_agent) + t_check(idx_agent) ;
-            t_next_plan(idx_agent) = t_next_recheck(idx_agent) + t_plan(idx_agent) ;
+            % set the times to begin checking if a new plan was found, or
+            % else try planning again at the current time plus t_plan
+            if flag_v_peak_feas
+                t_next_check(idx_agent) = t_sim + t_plan(idx_agent) ;
+                t_next_recheck(idx_agent) = t_next_check(idx_agent) + t_check(idx_agent) ;
+                t_next_plan(idx_agent) = t_next_recheck(idx_agent) + t_plan(idx_agent) ;
+            else
+                t_next_plan(idx_agent) = t_sim + t_plan(idx_agent) ;
+                t_next_check(idx_agent) = inf ;
+                t_next_recheck(idx_agent) = inf ;
+            end
         
             % figure out how much time was spent
             t_plan_spent = toc(tic_start_plan) ;
@@ -317,6 +352,8 @@ for idx = 1:n_t_sim
             
         %% rechecking
         elseif t_sim >= t_next_recheck(idx_agent)
+            tic_start_recheck = tic ;
+            
             disp(['  agent ',num2str(idx_agent),' rechecking'])
             
             % get the pending plan for the current agent
@@ -350,6 +387,8 @@ for idx = 1:n_t_sim
             
             % mark this recheck as complete by setting its time to inf
             t_next_recheck(idx_agent) = inf ;
+            
+            t_spent_recheck(idx) = toc(tic_start_recheck) ;
         end
         
         %% state update
