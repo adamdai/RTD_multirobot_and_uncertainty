@@ -4,7 +4,7 @@
 %
 % Authors: Shreyas Kousik
 % Created:  5 Jan 2021
-% Updated: 11 Jan 2021
+% Updated: 12 Jan 2021
 clear ; clc
 %% user parameters
 % plotting parameters
@@ -13,20 +13,20 @@ gif_delay_time = 1/20 ; % 1/fps
 gif_filename = 'multi_agent_planning.gif' ;
 
 % simulation timing parameters
-t_sim_total = 5 ; % [s]
+t_sim_total = 10 ; % [s]
 t_sim_sample = 0.01 ; % [s]
 
 % world and obstacle parameters (obstacles are all static for now)
 n_dim = 2 ;
-world_bounds = 4.*[-1,1,-1,1] ; % 2-D world
-n_obs = 5 ;
+world_bounds = 5.*[-1,1,-1,1] ; % 2-D world
+n_obs = 30 ;
 r_obs_min = 0.1 ; % minimum obstacle radius [m]
 r_obs_max = 0.5 ; % maximum obstacle radius [m]
-r_goal_reached = 0.1 ; % [m] stop planning when within this dist of goal
+r_goal_reached = 0.3 ; % [m] stop planning when within this dist of goal
 
 % agent parameters
-r_agents = 0.5 ; % [m]
-v_max = 5 ; % [m/s] max allowed velocity (enforced with 2-norm)
+r_agents = 0.25 ; % [m]
+v_max = 10 ; % [m/s] max allowed velocity (enforced with 2-norm)
 delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 
 % planning parameters -- note that the length of t_plan, t_check, and
@@ -56,8 +56,9 @@ t_next_recheck = t_plan + t_check ;
 t_committed = zeros(1,n_agents) ;
 n_t_plan = length(LPM.time) ;
 
-% set up check for goal reached
-flag_goal_reached = false(1,n_agents) ;
+% set up check for goals reached by the agents and the planners
+chk_goal_reached_by_agent = false(1,n_agents) ;
+chk_goal_reached_by_plan = false(1,n_agents) ;
 
 %% world setup
 % generate uniformly-distributed random obstacles
@@ -92,6 +93,9 @@ V_bounds = delta_v_peak_max.*repmat([-1,1],1,n_dim) ;
 for idx_agent = 1:n_agents
     plans_committed{1,idx_agent} = LPM.time ;
     plans_committed{2,idx_agent} = repmat(agent_state(:,idx_agent),1,length(LPM.time)) ;
+    
+    plans_pending{1,idx_agent} = LPM.time ;
+    plans_pending{2,idx_agent} = repmat(agent_state(:,idx_agent),1,length(LPM.time)) ;
 end
            
 %% plot setup
@@ -101,7 +105,11 @@ axis(1.25.*(world_bounds))
 % start positions
 plot_path(agent_state(1:n_dim,:),'go','markersize',12,'linewidth',1.5)
 
-% goal positions
+% goal areas
+for idx = 1:n_agents
+    plot_disc(r_goal_reached,P_goal(:,idx),'facecolor','g','edgecolor','g',...
+        'facealpha',0.1)
+end
 plot_path(P_goal,'gp','markersize',12,'markerfacecolor','g')
 
 % obstacles
@@ -120,7 +128,8 @@ for idx_agent = 1:n_agents
     plot_data_agents = [plot_data_agents, h_agent] ;
     
     % plot plans
-    h_plans = plot_path(plans_committed{2,idx_agent}(1:n_dim,:),'-','color',[0.5 0.5 1],'linewidth',1.25) ;
+    h_plans = plot_path(plans_committed{2,idx_agent}(1:n_dim,:),...
+        '-','color',[0.5 0.5 1],'linewidth',1.25) ;
     plot_data_plans = [plot_data_plans, h_plans] ;
 end
 
@@ -154,7 +163,7 @@ for idx = 1:n_t_sim
         T_old = plans_committed{1,idx_agent} ;
         X_old = plans_committed{2,idx_agent} ;
         
-        if t_sim >= t_next_plan(idx_agent) && (~flag_goal_reached(idx_agent))
+        if t_sim >= t_next_plan(idx_agent) && (~chk_goal_reached_by_plan(idx_agent))
         %% planning
         % if the current time is the current agent's next replan time, then
         % that agent needs to replan (duh)
@@ -269,7 +278,7 @@ for idx = 1:n_t_sim
                
                % check if the global goal has been reached
                if vecnorm(X_new(1:n_dim,end) - P_goal(:,idx_agent)) < r_goal_reached
-                   flag_goal_reached(idx_agent) = true ;
+                   chk_goal_reached_by_plan(idx_agent) = true ;
                end
             end           
             
@@ -307,6 +316,10 @@ for idx = 1:n_t_sim
             if n_dim == 3
                 plot_data_plans(idx_agent).ZData = X_new(3,:) ;
             end
+            
+            % set line style to pending
+            plot_data_plans(idx_agent).LineStyle = '--' ;
+            
         %% checking
         elseif t_sim >= t_next_check(idx_agent)
             disp(['  agent ',num2str(idx_agent),' checking'])
@@ -389,12 +402,21 @@ for idx = 1:n_t_sim
             t_next_recheck(idx_agent) = inf ;
             
             t_spent_recheck(idx) = toc(tic_start_recheck) ;
+            
+            %% update committed plan line style
+            if ~isempty(X_pend)
+                plot_data_plans(idx_agent).LineStyle = '-' ;
+            end
         end
         
         %% state update
         % finally, update the state of each agent (for now assuming perfect
         % tracking behavior)
         agent_state(:,idx_agent) = match_trajectories(t_sim,T_old,X_old) ;
+        
+        % check if the agent reached the goal
+        chk_goal_reached_by_agent(idx_agent) = vecnorm(...
+            agent_state(1:n_dim,idx_agent) - P_goal(:,idx_agent)) <= r_goal_reached ;
         
         %% plotting agents
         % plot agent
@@ -419,9 +441,18 @@ for idx = 1:n_t_sim
     else
         pause(t_sim_sample)
     end
+    
+    %% end simulation if all goals were reached
+    if all(chk_goal_reached_by_agent)
+        disp('all goals have been reached by all agents!')
+        break
+    end    
 end
 
-toc(tic_real_time)
+t_sim_total = toc(tic_real_time) ;
+
+disp(['Total real time spent: ',num2str(t_sim_total,'%0.2f'),' s'])
+
 %% helper functions
 function P_out = make_random_feasible_locations(n_agents,r_agents,O_ctr,O_rad,world_bounds)
     flag_P_feas = false ;
