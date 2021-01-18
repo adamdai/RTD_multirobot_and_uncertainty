@@ -8,13 +8,13 @@
 clear ; clc
 %% user parameters
 % plotting parameters
-flag_save_gif = false ;
+flag_save_gif = true ;
 gif_delay_time = 1/20 ; % 1/fps
 gif_filename = 'multi_agent_planning.gif' ;
 
 % simulation timing parameters
 t_sim_total = 10 ; % [s]
-t_sim_sample = 0.01 ; % [s]
+t_sim_sample = 0.1 ; % [s]
 
 % world and obstacle parameters (obstacles are all static for now)
 n_dim = 2 ;
@@ -33,8 +33,8 @@ delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 % t_recheck should be the same, and equal to the number of agents that you
 % want to tootle around
 t_plan = [0.1 0.2 0.1 0.5] ; % [s] amount of time allotted for planning
-t_check = [0.01 0.01 0.01 0.02] ; % [s] amount of time allotted for check
-t_recheck = [0.01 0.01 0.01 0.01] ; % [s] amount of time allotted for recheck
+t_check = [0.1 0.1 0.1 0.1] ; % [s] amount of time allotted for check
+t_recheck = [0.1 0.1 0.1 0.1] ; % [s] amount of time allotted for recheck
 n_plan_max = 10000 ; % max number of plans to evaluate
 
 %% automated from here
@@ -153,7 +153,7 @@ for idx = 1:n_t_sim
     % get the current time
     t_sim = T_sim_vec(idx) ;
     
-    disp(['t = ',num2str(t_sim)])
+    %disp(['t = ',num2str(t_sim)])
     
     % iterate through the agents to update them for the current time (note
     % that we can randomize the order of this in the future)
@@ -262,7 +262,7 @@ for idx = 1:n_t_sim
                % if no new plan was found, continue the previous plan
                disp('    found no new plan')
                
-               T_log = T_old >= t_sim ;
+               T_log = T_old >= t_sim ; % select parts of the previous plan that are yet to be executed
                
                % also, increase the length of the old plan by t_plan
                T_new = [T_old(T_log), T_old(end) + t_plan(idx_agent)] ;
@@ -284,7 +284,7 @@ for idx = 1:n_t_sim
             
             %% planning wrap up
             % append the previous trajectory to the new trajectory
-            T_old_log = T_old < T_new(1) ;
+            T_old_log = T_old < T_new(1) ; % part of the plan that has been executed
             T_new = [T_old(T_old_log), T_new] ;
             X_new = [X_old(:,T_old_log), X_new] ;
             
