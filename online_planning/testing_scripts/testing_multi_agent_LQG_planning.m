@@ -165,9 +165,21 @@ agent_state_est = [P_start ;
 agent_cov = repmat(P0,1,1,n_agents) ;
 
 % initialize reachable sets for each agent based on initial covariance
-agent_state_set = cell(1,n_agents);
+agent_state_set = cell(1,n_agents) ;
 for i = 1:n_agents
-   agent_state_set{i} = [agent_state(1:n_s,i); zeros(n_params,1)] + deleteZeros(cov2zonotope(P0_full,sigma_bound,n_FRS)); 
+   agent_state_set{i} = [agent_state(1:n_s,i); zeros(n_params,1)] + deleteZeros(cov2zonotope(P0_full,sigma_bound,n_FRS)) ; 
+end
+
+% history of noise term coefficients used in FRS computation
+agent_coeff_hist = cell(1,n_agents) ;
+for i = 1:n_agents
+   agent_coeff_hist{i}.a = eye(n_s) ; 
+   agent_coeff_hist{i}.b = 0 ; 
+   agent_coeff_hist{i}.c = [] ; 
+   agent_coeff_hist{i}.d = [] ; 
+   agent_coeff_hist{i}.e = eye(n_s) ; 
+   agent_coeff_hist{i}.p = [] ; 
+   agent_coeff_hist{i}.q = [] ; 
 end
            
 % initialize plan histories of each agent; 
@@ -304,8 +316,12 @@ for idx = 1:n_t_sim
             v_0 = x_0(n_dim + (1:n_dim),idx_agent) ;
             a_0 = x_0(2*n_dim + (1:n_dim),idx_agent) ;
             
+            x_start = [P_start(:,idx_agent); zeros(2,1)] ;
+            
             % compute FRS from initial conditions 
-            [pXrs, FRS_idx] = compute_online_FRS(p_0, v_0, a_0, v_max, sys, P0, LPM, sigma_bound) ;
+            hist = agent_coeff_hist{idx_agent} ; 
+            [pXrs, FRS_idx, hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, hist, sigma_bound) ;
+            agent_coeff_hist{idx_agent} = hist ; 
             
             % create the time vector for the new plan (to start at t_plan)
             T_new = LPM.time + t_sim + t_plan(idx_agent) ;
