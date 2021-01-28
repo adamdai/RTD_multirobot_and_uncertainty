@@ -28,6 +28,10 @@ w_obs_min = 0.5 ; % minimum obstacle width [m]
 w_obs_max = 1.0 ; % maximum obstacle width [m]
 r_goal_reached = 0.3 ; % [m] stop planning when within this dist of goal
 
+flag_save_world = true ; % 
+save_world_dir = 'C:\Users\Adam\Projects\NAVLab\RTD\RTD_multiagent_and_uncertainty\online_planning\worlds' ;
+file_load_world = 'world_4_agents_10_obs.mat' ; % mat file to load world, set to empty string if generating new world
+
 % agent parameters
 r_agents = 0.25 ; % [m]
 v_max = 2 ; % [m/s] max allowed velocity magnitude along either dimension
@@ -131,26 +135,50 @@ chk_goal_reached_by_plan = false(1,n_agents) ;
 
 
 %% world setup
-% generate uniformly-distributed random obstacles
-O_ctr = rand_in_bounds(world_bounds,[],[],n_obs) ; % obstacle positions
-O_wid = rand_range(w_obs_min,w_obs_max,[],[],2,n_obs) ; % obstacle widths
 
-% obstacle zonotope array
-O_zono = cell(1,n_obs) ;
-O_buff = cell(1,n_obs) ; % buffered by agent width
-for i = 1:n_obs % (is there a vectorized way to do this?)
-    % randomly rotate generators
-    O_gen = O_wid(:,i) .* eye(n_dim) ;
-    O_gen = rotation_matrix_2D(pi*rand()) * O_gen;
-    %O_gen = rand_range(w_obs_min,w_obs_max,[],[],n_dim,n_dim) ;
-    O_zono{i} = zonotope([O_ctr(:,i) O_gen]) ;
-    O_buff{i} = O_zono{i} + agent_zono ; 
+% if load_world empty, generate a new world
+if isempty(file_load_world) 
+    % generate uniformly-distributed random obstacles
+    O_ctr = rand_in_bounds(world_bounds,[],[],n_obs) ; % obstacle positions
+    O_wid = rand_range(w_obs_min,w_obs_max,[],[],2,n_obs) ; % obstacle widths
+
+    % obstacle zonotope array
+    O_zono = cell(1,n_obs) ;
+    O_buff = cell(1,n_obs) ; % buffered by agent width
+    for i = 1:n_obs % (is there a vectorized way to do this?)
+        % randomly rotate generators
+        O_gen = O_wid(:,i) .* eye(n_dim) ;
+        O_gen = rotation_matrix_2D(pi*rand()) * O_gen;
+        %O_gen = rand_range(w_obs_min,w_obs_max,[],[],n_dim,n_dim) ;
+        O_zono{i} = zonotope([O_ctr(:,i) O_gen]) ;
+        O_buff{i} = O_zono{i} + agent_zono ; 
+    end
+
+    % create random start and goal locations that are feasible to get to
+    disp(' generating starting locations')
+    P_start = make_random_feasible_locations(n_agents,r_agents,O_buff,world_bounds) ;
+    P_goal = make_random_feasible_locations(n_agents,r_agents,O_buff,world_bounds) ;
+    
+    % save the world to a .mat file
+    if flag_save_world
+        world.obs = O_zono ;
+        world.obs_buff = O_buff ;
+        world.p_start = P_start ;
+        world.p_goal = P_goal ;
+        filename = strcat('world_',num2str(n_agents),'_agents_',num2str(n_obs),'_obs') ;
+        disp(' saving generated world')
+        save(fullfile(save_world_dir,filename),'world') ;
+    end
+
+else
+    % otherwise, load the world
+    disp(' loading previous world')
+    load(fullfile(save_world_dir,file_load_world)) ;
+    O_zono = world.obs ;
+    O_buff = world.obs_buff ;
+    P_start = world.p_start ;
+    P_goal = world.p_goal ;
 end
-
-% create random start and goal locations that are feasible to get to
-disp(' generating starting locations')
-P_start = make_random_feasible_locations(n_agents,r_agents,O_buff,world_bounds) ;
-P_goal = make_random_feasible_locations(n_agents,r_agents,O_buff,world_bounds) ;
 
 
 %% initialize agents and plans
