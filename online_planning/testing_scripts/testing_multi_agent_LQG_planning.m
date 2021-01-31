@@ -135,7 +135,6 @@ chk_goal_reached_by_plan = false(1,n_agents) ;
 
 
 %% world setup
-
 % if load_world empty, generate a new world
 if isempty(file_load_world) 
     % generate uniformly-distributed random obstacles
@@ -203,11 +202,11 @@ agent_coeff_hist = cell(1,n_agents) ;
 for i = 1:n_agents
    agent_coeff_hist{i}.a = eye(n_s) ; 
    agent_coeff_hist{i}.b = 0 ; 
-   agent_coeff_hist{i}.c = [] ; 
-   agent_coeff_hist{i}.d = [] ; 
+   agent_coeff_hist{i}.c = zeros(n_s,n_s,0) ; 
+   agent_coeff_hist{i}.d = zeros(n_s,2,0) ; 
    agent_coeff_hist{i}.e = eye(n_s) ; 
-   agent_coeff_hist{i}.p = [] ; 
-   agent_coeff_hist{i}.q = [] ; 
+   agent_coeff_hist{i}.p = zeros(n_s,n_s,0) ; 
+   agent_coeff_hist{i}.q = zeros(n_s,2,0) ; 
 end
            
 % initialize plan histories of each agent; 
@@ -348,7 +347,7 @@ for idx = 1:n_t_sim
             
             % compute FRS from initial conditions 
             hist = agent_coeff_hist{idx_agent} ; 
-            [pXrs, FRS_idx, hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, hist, sigma_bound) ;
+            [pXrs, FRS_idx, hist] = compute_online_FRS_new(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, hist, sigma_bound) ;
             agent_coeff_hist{idx_agent} = hist ; 
             
             % create the time vector for the new plan (to start at t_plan)

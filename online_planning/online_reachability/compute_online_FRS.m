@@ -24,7 +24,7 @@
 %          reachable sets in time
 %   
 
-function [pXrs, Xrs, coeff_hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, coeff_hist, sigma_bound)
+function [pXrs, Xrs, coeff_hist] = compute_online_FRS_new(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, coeff_hist, sigma_bound)
     
     % retrieve system matrices from sys struct
     A = sys.A; B = sys.B; C = sys.C;
@@ -42,7 +42,7 @@ function [pXrs, Xrs, coeff_hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_
     n = size(A,1); % system dimension
     m = dim(S); % trajectory parameter dimension
     
-    coeff_thresh = 1e-1;
+    coeff_thresh = 0;
 
     % trajectory length
     N = length(LPM.time);
@@ -69,7 +69,9 @@ function [pXrs, Xrs, coeff_hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_
     % initial state estimation error
     WpZ = probZonotope(zeros(n,1),cov2probGen(Q),sigma_bound);
     VpZ = probZonotope(zeros(2,1),cov2probGen(R),sigma_bound);
-
+    WpZ_c = center(WpZ); WpZ_g = generators(mean(WpZ)); WpZ_cov = sigma(WpZ);
+    VpZ_c = center(VpZ); VpZ_g = generators(mean(VpZ)); VpZ_cov = sigma(VpZ);
+    
     % initialize FRS
     pXrs = cell(1,N);
     Xrs = cell(1,N);
@@ -92,48 +94,23 @@ function [pXrs, Xrs, coeff_hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_
         b = (A-B*K)*b - B*K*e;
 
         % update previous c and d coeffs 
-        if size(c,3) > 1
-            for i = 1:size(c,3)
-                c(:,:,i) = (A-B*K)*c(:,:,i) - B*K*p(:,:,i);
-            end
-        else
-            if size(c,1) > 1
-                c = (A-B*K)*c - B*K*p;
-            end
-        end
+        c = multiprod(A-B*K,c) - multiprod(B*K,p);
+        d = multiprod(A-B*K,d) - multiprod(B*K,q);
         
-        if size(d,3) > 1
-            for i = 1:size(d,3)
-                d(:,:,i) = (A-B*K)*d(:,:,i) - B*K*q(:,:,i);
-            end
-        else
-            if size(d,1) > 1
-                d = (A-B*K)*d - B*K*q;
-            end
-        end
-
         % append new c and d coeffs 
         c = cat(3,c,eye(n));  
         d = cat(3,d,zeros(n,2));
 
         % calculate all CpZ and DpZ terms
-        if size(c,3) > 1
-            all_CpZ = [c(:,:,1); zeros(m,n)] * WpZ;
-            for i = 2:size(c,3)
-                all_CpZ = all_CpZ + [c(:,:,i); zeros(m,n)] * WpZ;
-            end
-        else
-            all_CpZ = [c; zeros(m,n)] * WpZ;
-        end
+        all_CpZ_c = cat(1, sum(c,3)*WpZ_c, zeros(m,1));
+        all_CpZ_g = cat(1, reshape(multiprod(c,WpZ_g),n,[]), zeros(m,size(WpZ_g,2)*size(c,3)));
+        all_CpZ_cov = [sum(multiprod(multiprod(c,WpZ_cov),permute(c,[2 1 3])),3) zeros(n,m); zeros(m,n) zeros(m,m)];
+        all_CpZ = probZonotope([all_CpZ_c all_CpZ_g], cov2probGen(all_CpZ_cov), sigma_bound);
         
-        if size(d,3) > 1
-            all_DpZ = [d(:,:,1); zeros(m,2)] * VpZ;
-            for i = 2:size(d,3)
-                all_DpZ = all_DpZ + [d(:,:,i); zeros(m,2)] * VpZ;
-            end
-        else
-            all_DpZ = [d; zeros(m,2)] * VpZ;
-        end
+        all_DpZ_c = cat(1, sum(d,3)*VpZ_c, zeros(m,1));
+        all_DpZ_g = cat(1, reshape(multiprod(d,VpZ_g),n,[]), zeros(m,size(VpZ_g,2)*size(d,3)));
+        all_DpZ_cov = [sum(multiprod(multiprod(d,VpZ_cov),permute(d,[2 1 3])),3) zeros(n,m); zeros(m,n) zeros(m,m)];
+        all_DpZ = probZonotope([all_DpZ_c all_DpZ_g], cov2probGen(all_DpZ_cov), sigma_bound);
 
         % compute reachable set
         AB_coeff = 0;
@@ -159,25 +136,8 @@ function [pXrs, Xrs, coeff_hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_
         e = (eye(n) - L*C)*A*e;
         
         % update previous p and q coeffs 
-        if size(p,3) > 1
-            for i = 1:size(p,3)
-                p(:,:,i) = (eye(n) - L*C)*A*p(:,:,i);
-            end
-        else
-            if size(p,1) > 1
-                p = (eye(n) - L*C)*A*p;
-            end
-        end
-        
-        if size(q,3) > 1
-            for i = 1:size(q,3)
-                q(:,:,i) = (eye(n) - L*C)*A*q(:,:,i);
-            end
-        else
-            if size(q,1) > 1
-                q = (eye(n) - L*C)*A*q;
-            end
-        end
+        p = multiprod((eye(n)-L*C)*A,p);
+        q = multiprod((eye(n)-L*C)*A,q);
 
         % append new p and q coeffs 
         p = cat(3,p,-(eye(n) - L*C));  

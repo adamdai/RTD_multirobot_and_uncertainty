@@ -37,9 +37,9 @@ flag_save_LPM = false ;
 
 % test trajectory parameters for plotting (works for 1-, 2-, or 3-D)
 flag_test_LPM = true ; % set to false if you just want to make the PRS
-v_0_test = 2 ;
-a_0_test = -5 ;
-v_peak_test = 3 ;
+v_0_test = [2 1];
+a_0_test = [-5 0];
+v_peak_test = [3 1];
 
 %% automated from here
 % create symbolic parameters
