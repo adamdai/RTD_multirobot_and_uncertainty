@@ -10,7 +10,7 @@
 %              assumes following structure:
 %              {A_2_1,..., A_2_N, A_3_1,..., A_3_N, ... , A_M_1,...,A_M_N}
 %  k_dim - dimensions of the FRS that the trajectory parameters exist in
-%  obs_dim - dimensions of the FRS that the obstacles exist in
+%  collision_dim - dimensions of the FRS that the obstacles exist in
 
 function [A_con, b_con] = generate_collision_constraints(FRS_agent, FRS_other, k_dim, collision_dim)
 

@@ -24,12 +24,12 @@ gif_filename = 'multi_agent_planning.gif' ;
 
 % simulation timing parameters
 t_sim_total = 10 ; % [s]
-t_sim_sample = 0.1 ; % [s]
+t_sim_sample = 0.01 ; % [s]
 
 % world and obstacle parameters (obstacles are all static for now)
 n_dim = 2 ;
-world_bounds = 5.*[-1,1,-1,1] ; % 2-D world
-n_obs = 10 ;
+world_bounds = 4.*[-1,1,-1,1] ; % 2-D world
+n_obs = 15 ;
 r_obs_min = 0.1 ; % minimum obstacle radius [m]
 r_obs_max = 0.5 ; % maximum obstacle radius [m]
 r_goal_reached = 0.3 ; % [m] stop planning when within this dist of goal
@@ -37,7 +37,7 @@ r_goal_reached = 0.3 ; % [m] stop planning when within this dist of goal
 % agent parameters
 n_agents = 10 ;
 r_agents = 0.25 ; % [m]
-v_max = 1 ; % [m/s] max allowed velocity (enforced with 2-norm)
+v_max = 5 ; % [m/s] max allowed velocity (enforced with 2-norm)
 delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 
 % planning parameters
@@ -152,7 +152,7 @@ for idx = 1:n_t_sim
             
             v_RVO = 0.5*(v_cur + v_other) ;
             
-            VO_idx = make_velocity_obstacle(p_cur,p_other,v_RVO,r_agents) ;
+            VO_idx = make_velocity_obstacle(p_cur,p_other,v_RVO,r_agents+0.05) ;
                 
             VO = [VO, VO_idx] ;
         end
@@ -163,7 +163,7 @@ for idx = 1:n_t_sim
             r_obs = O_rad(idx_obs) ;
             v_RVO = 0.5*(v_cur + v_obs) ;
             
-            VO_idx = make_velocity_obstacle(p_cur,p_obs,v_RVO,r_agents,r_obs) ;
+            VO_idx = make_velocity_obstacle(p_cur,p_obs,v_RVO,r_agents+0.05,r_obs) ;
             VO = [VO, VO_idx] ;
         end
         

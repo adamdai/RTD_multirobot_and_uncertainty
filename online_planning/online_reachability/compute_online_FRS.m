@@ -42,7 +42,7 @@ function [pXrs, Xrs, coeff_hist] = compute_online_FRS_new(x_start, p_0, v_0, a_0
     n = size(A,1); % system dimension
     m = dim(S); % trajectory parameter dimension
     
-    coeff_thresh = 0;
+    coeff_thresh = 5e-1;
 
     % trajectory length
     N = length(LPM.time);

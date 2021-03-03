@@ -9,6 +9,8 @@
 %   
 clear ; clc
 %% user parameters
+% seed
+%rng('default')
 % plotting parameters
 flag_save_gif = true ;
 gif_delay_time = 1/20 ; % 1/fps
@@ -23,14 +25,15 @@ t_sim_sample = 0.1 ; % [s]
 % between w_obs_min and w_obs_max 
 n_dim = 2 ;
 world_bounds = 5.*[-1,1,-1,1] ; % 2-D world
-n_obs = 10 ;
+n_obs = 5 ;
 w_obs_min = 0.5 ; % minimum obstacle width [m] 
 w_obs_max = 1.0 ; % maximum obstacle width [m]
 r_goal_reached = 0.3 ; % [m] stop planning when within this dist of goal
 
-flag_save_world = true ; % 
-save_world_dir = 'C:\Users\Adam\Projects\NAVLab\RTD\RTD_multiagent_and_uncertainty\online_planning\worlds' ;
-file_load_world = 'world_4_agents_10_obs.mat' ; % mat file to load world, set to empty string if generating new world
+flag_gen_world = true ; % whether to generate a new world or load a previously saved one
+flag_save_world = false ; % whether to save the generated world
+save_world_dir = 'C:\Users\Adam\Projects\NAVLab\RTD\RTD_multiagent_and_uncertainty\online_planning\worlds' ; 
+file_load_world = 'collision_example.mat' ; % mat file to load world
 
 % agent parameters
 r_agents = 0.25 ; % [m]
@@ -42,7 +45,7 @@ delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 % t_recheck should be the same, and equal to the number of agents that you
 % want to tootle around
 %  -> use 
-n_agents = 4 ;
+n_agents = 1 ;
 t_plan = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for planning
 t_check = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for check
 t_recheck = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for recheck
@@ -136,7 +139,7 @@ chk_goal_reached_by_plan = false(1,n_agents) ;
 
 %% world setup
 % if load_world empty, generate a new world
-if isempty(file_load_world) 
+if flag_gen_world 
     % generate uniformly-distributed random obstacles
     O_ctr = rand_in_bounds(world_bounds,[],[],n_obs) ; % obstacle positions
     O_wid = rand_range(w_obs_min,w_obs_max,[],[],2,n_obs) ; % obstacle widths
@@ -217,10 +220,12 @@ end
 plans_committed.time = cell(1,n_agents) ;
 plans_committed.plan = cell(1,n_agents) ;
 plans_committed.FRS = cell(1,n_agents) ;
+plans_committed.vpeak = zeros(n_dim,n_agents) ;
 
 plans_pending.time = cell(1,n_agents) ;
 plans_pending.plan = cell(1,n_agents) ;
 plans_pending.FRS = cell(1,n_agents) ;
+plans_pending.vpeak = zeros(n_dim,n_agents) ;
 
 for i = 1:n_agents
    plans_committed.FRS{i} = cell(1,N) ;
@@ -317,6 +322,12 @@ for idx = 1:n_t_sim
     
     disp(['t = ',num2str(t_sim)])
     
+    % FOR DEBUGGING: check for agent collisions
+%     chk_pos = check_agent_pos_collisions(agent_state, 2*r_agents);
+%     if ~chk_pos
+%         disp('COLLISION')
+%     end
+    
     % iterate through the agents to update them for the current time (note
     % that we can randomize the order of this in the future)
     for idx_agent = 1:n_agents
@@ -347,7 +358,7 @@ for idx = 1:n_t_sim
             
             % compute FRS from initial conditions 
             hist = agent_coeff_hist{idx_agent} ; 
-            [pXrs, FRS_idx, hist] = compute_online_FRS_new(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, hist, sigma_bound) ;
+            [pXrs, FRS_idx, hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, hist, sigma_bound) ;
             agent_coeff_hist{idx_agent} = hist ; 
             
             % create the time vector for the new plan (to start at t_plan)
@@ -421,10 +432,6 @@ for idx = 1:n_t_sim
                 % compute nominal plan for this v_peak 
                 P_idx = [v_0, a_0, v_peak]*LPM.position + repmat(p_0,1,n_t_plan) ;
                 
-                % check against the other plans
-                % =====
-                %chk_plans = check_agent_plan_collisions(P_other,P_idx,n_agents,r_agents) ;
-                
                 % check against other FRSes
                 % evaluate collision check constraints for this v_peak
                 % =====
@@ -482,6 +489,7 @@ for idx = 1:n_t_sim
             plans_pending.time{idx_agent} = T_new ;
             plans_pending.plan{idx_agent} = X_new ;
             plans_pending.FRS{idx_agent} = FRS_new ;
+            plans_pending.vpeak(:,idx_agent) = v_peak ;
             
             % set the times to begin checking if a new plan was found, or
             % else try planning again at the current time plus t_plan
@@ -543,6 +551,7 @@ for idx = 1:n_t_sim
             T_pend = plans_pending.time{idx_agent} ;
             X_pend = plans_pending.plan{idx_agent} ;
             FRS_pend = plans_pending.FRS{idx_agent} ;
+            vpeak_pend = plans_pending.vpeak(:,idx_agent) ;
             
             if ~isempty(X_pend)
                 %% old plan collision checking
@@ -560,12 +569,13 @@ for idx = 1:n_t_sim
                 %% FRS collision checking
                 % may have to implement different (simpler) checking that
                 % just checks 2 FRSes against each other 
+                % - FRS_pend is already sliced whereas FRS_idx is unsliced
 %                 [P_other, FRS_other] = get_other_agents_committed_plans(n_agents,...
-%                 idx_agent,plans_committed,n_dim,T_new) ;
+%                     idx_agent,plans_committed,n_dim,T_new) ;
 %             
-%                 [A_con_FRS, b_con_FRS] = generate_collision_constraints(FRS_idx,FRS_other,k_dim,obs_dim);
+%                 [A_con_FRS, b_con_FRS] = generate_collision_constraints(FRS_pend,FRS_other,k_dim,obs_dim);
 %                 
-%                 chk_plans = check_agent_FRS_collisions(A_con_FRS,b_con_FRS,v_peak,c_k,g_k) ;
+%                 chk_plans = check_agent_FRS_collisions(A_con_FRS,b_con_FRS,vpeak_pend,c_k,g_k) ;
                 
                 % make sure we didn't take too much time
                 chk_time = toc(tic_start_check) < t_check(idx_agent) ;
@@ -771,19 +781,35 @@ end
 function chk_plans = check_agent_plan_collisions(P_other,P_agent,n_agents,r_agents)
 % return TRUE if the plan is ok, and FALSE if the plan is NOT ok
     if ~isempty(P_other)
-        dist_to_others = vecnorm(P_other - repmat(P_agent,1,n_agents-1));
+        dist_to_others = vecnorm(P_other - repmat(P_agent,1,n_agents-1)) ;
         chk_plans = ~any(dist_to_others <= 2*r_agents) ;
     else
         chk_plans = false ;
     end
 end
 
+
+% check if any agents are currently colliding
+% use for debugging
+function chk_pos = check_agent_pos_collisions(agent_state, buff)
+% return TRUE if no collisions, FALSE if there is a collision
+    P_agents = agent_state(1:2,:);
+    D = pdist(P_agents'); % pairs of distances between agents
+    if min(D) < buff
+        chk_pos = false;
+    else
+        chk_pos = true;
+    end
+end
+
+
+
 % given half-space constraints {A_con, b_con} on the v_peak trajectory 
 % parameters space, evaluate a specific v_peak to see if it satisfies the 
 % constraints
 function chk_FRS = check_agent_FRS_collisions(A_con,b_con,v_peak,c_k,g_k)
 % return TRUE if the plan is ok, and FALSE if the plan is NOT ok
-    c = inf;
+    c = inf ;
     lambdas = (v_peak - c_k)./g_k; % given a parameter, get coefficients on k_slc_G generators
     for k = 1:length(A_con) % ============ since initial set is not sliceable w.r.t. inputs
         c_tmp = A_con{k}*lambdas - b_con{k}; % A*lambda - b <= 0 means inside unsafe set
