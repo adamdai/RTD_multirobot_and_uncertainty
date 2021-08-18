@@ -25,7 +25,7 @@ t_sim_sample = 0.1 ; % [s]
 % between w_obs_min and w_obs_max 
 n_dim = 2 ;
 world_bounds = 5.*[-1,1,-1,1] ; % 2-D world
-n_obs = 5 ;
+n_obs = 10 ;
 w_obs_min = 0.5 ; % minimum obstacle width [m] 
 w_obs_max = 1.0 ; % maximum obstacle width [m]
 r_goal_reached = 0.3 ; % [m] stop planning when within this dist of goal
@@ -45,7 +45,7 @@ delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 % t_recheck should be the same, and equal to the number of agents that you
 % want to tootle around
 %  -> use 
-n_agents = 1 ;
+n_agents = 3 ;
 t_plan = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for planning
 t_check = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for check
 t_recheck = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for recheck
@@ -454,7 +454,7 @@ for idx = 1:n_t_sim
             if ~flag_v_peak_feas
                % if no new plan was found, continue the previous plan
                disp('    found no new plan')
-               disp(['    chk_obs: ',num2str(chk_obs),' chk_FRS: ',num2str(chk_FRS)])
+               %disp(['    chk_obs: ',num2str(chk_obs),' chk_FRS: ',num2str(chk_FRS)])
                
                T_log = T_old >= t_sim ;
                

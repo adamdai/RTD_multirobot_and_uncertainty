@@ -21,9 +21,9 @@ flag_save_PRS = false ;
 
 % test trajectory parameters for plotting (works for 1-, 2-, or 3-D)
 flag_test_PRS = true ; % set to false if you just want to make the PRS
-v_0_test = -10 ;
-a_0_test = -10 ;
-v_peak_test = -1 ;
+v_0_test = [2; -3; 3] ;
+a_0_test = [2; -1; 2] ;
+v_peak_test = [-1; -5; 4] ;
 
 %% automated from here
 % create symbolic parameters
