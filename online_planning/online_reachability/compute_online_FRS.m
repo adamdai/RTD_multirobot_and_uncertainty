@@ -24,7 +24,7 @@
 %          reachable sets in time
 %   
 
-function [pXrs, Xrs, coeff_hist] = compute_online_FRS_new(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, coeff_hist, sigma_bound)
+function [pXrs, Xrs, coeff_hist] = compute_online_FRS(x_start, p_0, v_0, a_0, v_max, sys, P0, LPM, coeff_hist, sigma_bound)
     
     % retrieve system matrices from sys struct
     A = sys.A; B = sys.B; C = sys.C;
@@ -42,7 +42,7 @@ function [pXrs, Xrs, coeff_hist] = compute_online_FRS_new(x_start, p_0, v_0, a_0
     n = size(A,1); % system dimension
     m = dim(S); % trajectory parameter dimension
     
-    coeff_thresh = 5e-1;
+    coeff_thresh = 0;
 
     % trajectory length
     N = length(LPM.time);
