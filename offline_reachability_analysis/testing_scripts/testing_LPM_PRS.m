@@ -20,7 +20,15 @@ load('quadrotor_linear_planning_model.mat')
 v_max = 3;
 
 % initialize PRS
+N = size(LPM.time,2);
 PRS = cell(1,N);
+
+P_lpm = LPM.position';
+
+% peak velocity space zonotope
+c_pk = [0;0;0];
+G_pk = v_max * eye(3);
+V_pk = zonotope(c_pk,G_pk);
 
 % % trajectory parameter space (zonotope) 
 % v_pk_c = [0; 0; 0];
@@ -40,13 +48,6 @@ PRS = cell(1,N);
 % end
 
 %% zero initial conditions
-% P_lpm = LPM.position';
-% 
-% % peak velocity space zonotope
-% c_pk = [0;0;0];
-% G_pk = v_max * eye(3);
-% V_pk = zonotope(c_pk,G_pk);
-% 
 % figure(1); hold on
 % for i = 1:N
 %     pos = P_lpm(i,3) * V_pk;
@@ -82,7 +83,7 @@ for i = 1:N
     pos_a0 = P_lpm(i,2) * A0;
     pos_vpk = P_lpm(i,3) * V_pk;
     PRS{i} = augment(pos_v0,Z0) + augment(pos_a0,Z0) + augment(pos_vpk,V_pk);
-    plot(PRS{i})
+    plot(PRS{i});
 end
 
 % slice in v_peak dimensions (4,5,6) for v_peak = (-2,2,1)
