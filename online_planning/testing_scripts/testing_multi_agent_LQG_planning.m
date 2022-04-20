@@ -30,9 +30,9 @@ w_obs_min = 0.5 ; % minimum obstacle width [m]
 w_obs_max = 1.0 ; % maximum obstacle width [m]
 r_goal_reached = 0.3 ; % [m] stop planning when within this dist of goal
 
-flag_gen_world = true ; % whether to generate a new world or load a previously saved one
+flag_gen_world = false ; % whether to generate a new world or load a previously saved one
 flag_save_world = false ; % whether to save the generated world
-save_world_dir = 'C:\Users\Adam\Projects\NAVLab\RTD\RTD_multiagent_and_uncertainty\online_planning\worlds' ; 
+save_world_dir = 'C:\Users\adamd\OneDrive\Documents\Stanford\Research\NAVLab\projects\RTD\RTD_multirobot_and_uncertainty\online_planning\worlds' ; 
 file_load_world = 'collision_example.mat' ; % mat file to load world
 
 % agent parameters
@@ -45,7 +45,7 @@ delta_v_peak_max = 3 ; % [m/s] max 2-norm change in v_peak allowed between plans
 % t_recheck should be the same, and equal to the number of agents that you
 % want to tootle around
 %  -> use 
-n_agents = 3 ;
+n_agents = 4 ;
 t_plan = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for planning
 t_check = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for check
 t_recheck = 0.1 * ones(1,n_agents) ; % [s] amount of time allotted for recheck
